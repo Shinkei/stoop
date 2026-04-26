@@ -1,0 +1,33 @@
+{
+  // Prettier como formateador por defecto
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+
+  // ESLint auto-fix al guardar
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+
+  // Fuerza detección de ESLint v9 flat config (eslint.config.js)
+  "eslint.useFlatConfig": true,
+
+  // ESLint valida estos tipos de archivo
+  "eslint.validate": [
+    "typescript",
+    "typescriptreact"
+  ],
+
+  // Tailwind: apunta al CSS con los @theme tokens
+  "tailwindCSS.experimental.configFile": "./src/styles/app.css",
+
+  // Evita conflictos: Prettier formatea, ESLint no
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}

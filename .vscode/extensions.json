@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    // Formatter
+    "esbenp.prettier-vscode",
+    // Linter
+    "dbaeumer.vscode-eslint",
+    // Tailwind: autocomplete de clases + hover con CSS
+    "bradlc.vscode-tailwindcss",
+    // Snippets para SolidJS (createSignal, For, Show, etc.)
+    "solidjs.solid-snippets"
+  ]
+}
