@@ -121,15 +121,19 @@ const Home: Component = () => {
             <h2 class="font-display text-[22px] tracking-tight">De tus vecinos</h2>
           </div>
 
-          {/* Grid */}
-          <div class="grid grid-cols-2 gap-3 px-5">
+          {/* De tus vecinos — grid 2 columnas con alturas variables.
+              Alturas distintas por ítem (del diseño: h × 0.8) añaden
+              ritmo visual sin romper el grid. El valor viene del dato,
+              no de CSS fijo, para que cuando conectemos Supabase cada
+              ítem pueda tener su propia proporción de foto. */}
+          <div class="grid grid-cols-2 gap-3 px-5 pb-8">
             <For each={LISTINGS}>
               {(item) => (
                 <a href={`/item/${item.id}`} class="block">
                   <div
                     class="mb-2 rounded-xl"
                     style={{
-                      height: "140px",
+                      height: `${item.imgHeight}px`,
                       background: `oklch(0.35 0.06 ${item.hue})`,
                     }}
                   />
