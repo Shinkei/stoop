@@ -36,24 +36,29 @@ const Home: Component = () => {
   return (
     <MobileShell>
       <Title>Stoop — Home</Title>
-      <div class="flex h-full flex-col overflow-hidden">
-        <div class="flex-1 overflow-y-auto pb-24">
+      <div class="flex h-full flex-col">
+        <main class="flex-1 overflow-y-auto">
           {/* Header */}
-          <div class="px-5 pt-14 pb-4">
-            <p class="mb-1 text-[11px] tracking-wider text-stoop-muted uppercase">
-              <span class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-stoop-lime" />
-              Bedford-Stuyvesant
-            </p>
-            <h1 class="font-display text-[34px] leading-none tracking-tight">
-              The stoop<span class="text-stoop-lime">.</span>
-            </h1>
+          <div class="flex items-center justify-between px-5 pt-14 pb-4">
+            <div>
+              <p class="mb-1 text-[11px] tracking-wider text-muted uppercase">
+                <span class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-lime" />
+                Bedford-Stuyvesant
+              </p>
+              <h1 class="font-display text-[34px] leading-none tracking-tight">
+                The stoop<span class="text-lime">.</span>
+              </h1>
+            </div>
+            <button class="flex h-10 w-10 items-center justify-center rounded-full bg-card">
+              <BellIcon />
+            </button>
           </div>
 
-          {/* Search pill */}
+          {/* Search pill — rounded-lg = 16px per design system */}
           <div class="px-5 pb-5">
-            <div class="flex h-12 items-center gap-3 rounded-2xl bg-stoop-card px-4">
+            <div class="flex h-12 items-center gap-3 rounded-lg bg-card px-4">
               <SearchIcon />
-              <span class="text-sm text-stoop-muted">Busca en tu barrio…</span>
+              <span class="text-sm text-muted">Busca en tu barrio…</span>
             </div>
           </div>
 
@@ -65,8 +70,8 @@ const Home: Component = () => {
                   onClick={() => setSelectedCategory(cat)}
                   class="shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors"
                   classList={{
-                    "bg-stoop-lime text-stoop-bg": selectedCategory() === cat,
-                    "border border-white/15 text-stoop-cream": selectedCategory() !== cat,
+                    "bg-lime text-ink": selectedCategory() === cat,
+                    "border border-hairline text-cream": selectedCategory() !== cat,
                   }}
                 >
                   {cat}
@@ -78,7 +83,7 @@ const Home: Component = () => {
           {/* Section title */}
           <div class="flex items-baseline justify-between px-5 pb-3">
             <h2 class="font-display text-[22px] tracking-tight">Recién publicados</h2>
-            <span class="text-xs text-stoop-muted">Ver todos →</span>
+            <span class="text-xs text-muted">Ver todos →</span>
           </div>
 
           {/* Grid */}
@@ -95,14 +100,14 @@ const Home: Component = () => {
                   />
                   <p class="mb-0.5 text-[13px] leading-tight font-medium">{item.title}</p>
                   <div class="flex justify-between text-[11px]">
-                    <span class="font-semibold text-stoop-lime">${item.price}</span>
-                    <span class="text-stoop-muted">{item.distance}</span>
+                    <span class="font-semibold text-lime">${item.price}</span>
+                    <span class="text-muted">{item.distance}</span>
                   </div>
                 </a>
               )}
             </For>
           </div>
-        </div>
+        </main>
 
         <TabBar active="home" />
       </div>
@@ -111,16 +116,16 @@ const Home: Component = () => {
 };
 
 const SearchIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="rgba(245,245,240,0.6)"
-    stroke-width="1.8"
-  >
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(245,245,240,0.6)" stroke-width="1.8">
     <circle cx="11" cy="11" r="7" />
     <path d="M20 20l-3.5-3.5" />
+  </svg>
+);
+
+const BellIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
   </svg>
 );
 
