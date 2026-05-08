@@ -1,5 +1,5 @@
 import { Title } from "@solidjs/meta";
-import { type Component, createSignal, For, Show } from "solid-js";
+import { type Component, createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { TabBar } from "~/components/layout/TabBar";
 
@@ -32,10 +32,23 @@ import { TabBar } from "~/components/layout/TabBar";
        mutación directa), pero usar spreads aquí mantiene el estilo
        funcional del resto del código.
 
+  5. onMount + createEffect (efectos / side-effects)
+     - onMount: corre UNA vez cuando el componente se monta, siempre en
+       el cliente. Equivalente a useEffect(() => ..., []) de React.
+       Es el lugar correcto para leer del DOM o de localStorage (que
+       no existe durante SSR).
+     - createEffect: corre cuando alguna señal que lee cambia. Las
+       dependencias se rastrean automáticamente (sin array de deps).
+       Aquí lo usamos para escribir en localStorage cada vez que
+       recents() cambia.
+     - createEffect NO corre en el servidor, solo después de hidratar.
+
   TODO: Conectar con Supabase
   - supabase.from("listings").textSearch("title", query()) para resultados
   - Filtrar categorías por count si hay query activa
 */
+
+const STORAGE_KEY = "stoop:recent-searches";
 
 const INITIAL_RECENTS = [
   "silla mid-century",
@@ -60,6 +73,24 @@ const CATEGORIES: Category[] = [
 const Search: Component = () => {
   const [query, setQuery] = createSignal("");
   const [recents, setRecents] = createSignal<string[]>(INITIAL_RECENTS);
+
+  // Hidratar desde localStorage al montar (cliente only).
+  onMount(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        setRecents(JSON.parse(stored));
+      } catch {
+        // JSON inválido: ignorar y mantener defaults.
+      }
+    }
+  });
+
+  // Persistir en localStorage cada vez que recents() cambia.
+  // createEffect se suscribe a recents() automáticamente.
+  createEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(recents()));
+  });
 
   // Click en un chip: rellena el input y mueve el término al frente.
   const useRecent = (term: string) => {
