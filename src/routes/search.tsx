@@ -25,12 +25,19 @@ import { TabBar } from "~/components/layout/TabBar";
      - Acceder via props.active mantiene el getter reactivo que el
        compilador de Solid genera para cada prop.
 
+  4. Mutar señales con listas
+     - setRecents(prev => [term, ...prev.filter(t => t !== term)])
+       sigue el patrón "función con estado previo" igual que React.
+     - Solid no requiere inmutabilidad estricta (createStore permite
+       mutación directa), pero usar spreads aquí mantiene el estilo
+       funcional del resto del código.
+
   TODO: Conectar con Supabase
   - supabase.from("listings").textSearch("title", query()) para resultados
   - Filtrar categorías por count si hay query activa
 */
 
-const RECENT_SEARCHES = [
+const INITIAL_RECENTS = [
   "silla mid-century",
   "sartén de hierro",
   "monstera",
@@ -52,6 +59,13 @@ const CATEGORIES: Category[] = [
 
 const Search: Component = () => {
   const [query, setQuery] = createSignal("");
+  const [recents, setRecents] = createSignal<string[]>(INITIAL_RECENTS);
+
+  // Click en un chip: rellena el input y mueve el término al frente.
+  const useRecent = (term: string) => {
+    setQuery(term);
+    setRecents((prev) => [term, ...prev.filter((t) => t !== term)]);
+  };
 
   return (
     <MobileShell>
@@ -85,25 +99,32 @@ const Search: Component = () => {
             </div>
           </div>
 
-          {/* Recientes */}
-          <section class="px-5 pb-6">
-            <div class="mb-3 flex items-baseline justify-between">
-              <p class="text-[11px] font-semibold tracking-wider text-muted uppercase">
-                Recientes
-              </p>
-              <button class="text-[11px] text-muted">Borrar</button>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <For each={RECENT_SEARCHES}>
-                {(term) => (
-                  <button class="flex items-center gap-1.5 rounded-full border border-hairline px-3.5 py-2 text-[13px] text-cream">
-                    <ClockIcon />
-                    {term}
-                  </button>
-                )}
-              </For>
-            </div>
-          </section>
+          {/* Recientes — visible solo si hay items en la lista */}
+          <Show when={recents().length > 0}>
+            <section class="px-5 pb-6">
+              <div class="mb-3 flex items-baseline justify-between">
+                <p class="text-[11px] font-semibold tracking-wider text-muted uppercase">
+                  Recientes
+                </p>
+                <button onClick={() => setRecents([])} class="text-[11px] text-muted">
+                  Borrar
+                </button>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <For each={recents()}>
+                  {(term) => (
+                    <button
+                      onClick={() => useRecent(term)}
+                      class="flex items-center gap-1.5 rounded-full border border-hairline px-3.5 py-2 text-[13px] text-cream"
+                    >
+                      <ClockIcon />
+                      {term}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </section>
+          </Show>
 
           {/* Categorías */}
           <section class="px-5 pb-4">
