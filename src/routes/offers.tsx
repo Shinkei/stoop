@@ -22,7 +22,7 @@ const Offers: Component = () => {
     <MobileShell>
       <Title>Stoop — Ofertas</Title>
       <div class="flex h-full flex-col">
-        <div class="flex flex-1 items-center justify-center text-stoop-muted">
+        <div class="flex flex-1 items-center justify-center text-muted">
           <p class="text-xs">— offers inbox por implementar —</p>
         </div>
         <TabBar active="offers" />

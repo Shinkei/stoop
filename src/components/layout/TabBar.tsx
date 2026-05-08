@@ -22,14 +22,14 @@ type Props = {
 
 export const TabBar: Component<Props> = (props) => {
   return (
-    <nav class="fixed right-0 bottom-0 left-0 z-50 flex h-20 items-end justify-around bg-stoop-bg/95 pb-4 backdrop-blur-md">
+    <nav class="flex h-20 shrink-0 items-end justify-around bg-ink/95 pb-4 backdrop-blur-md">
       <TabItem href="/" icon="home" label="Home" active={props.active === "home"} />
       <TabItem href="/search" icon="search" label="Buscar" active={props.active === "search"} />
 
       {/* Botón central de vender — FAB */}
       <A
         href="/sell"
-        class="relative -top-4 flex h-14 w-14 items-center justify-center rounded-full bg-stoop-lime shadow-lg transition-transform active:scale-95"
+        class="relative -top-4 flex h-14 w-14 items-center justify-center rounded-full bg-lime shadow-cta transition-transform active:scale-95"
       >
         <svg
           width="24"

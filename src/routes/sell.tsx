@@ -31,7 +31,7 @@ const Sell: Component = () => {
   return (
     <MobileShell>
       <Title>Stoop — Vender</Title>
-      <div class="flex h-full items-center justify-center text-stoop-muted">
+      <div class="flex h-full items-center justify-center text-muted">
         <p class="text-xs">— nuevo listing por implementar —</p>
       </div>
     </MobileShell>
