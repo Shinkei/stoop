@@ -1,14 +1,32 @@
 import { Title } from "@solidjs/meta";
 import { A } from "@solidjs/router";
 import { type Component, type JSX } from "solid-js";
+import { createStore } from "solid-js/store";
 import { MobileShell } from "~/components/layout/MobileShell";
 
 /*
   Sell — /sell
 
   Wizard de 4 pasos: Fotos → Detalles → Recogida → Revisar.
-  Por ahora muestra estáticamente el paso 2 (Detalles) — la
-  navegación entre pasos llega en un commit posterior.
+
+  Nuevos conceptos de SolidJS aquí:
+
+  1. createStore({...})
+     - Para estado anidado (objetos, arrays). Es el primitivo correcto
+       cuando una sola "cosa" tiene muchos campos — un formulario.
+     - Devuelve [store, setStore] como createSignal, pero el store es
+       un proxy reactivo: leer store.title rastrea solo ese campo;
+       cambiar otro campo no notifica a quien lee title.
+     - Eso evita el problema de "todo el componente se re-renderiza
+       cuando cualquier campo cambia" que en React resuelves con
+       useReducer o context-fina.
+
+  2. setStore("path", value) — actualización por path
+     - setForm("title", "...") cambia solo title.
+     - setForm("photos", 0, "url") cambia photos[0] sin tocar el resto.
+     - setForm("acceptsOffers", (v) => !v) usa updater function.
+     - No requiere spreads ni inmutabilidad — el store es mutable
+       internamente pero las lecturas siguen siendo reactivas.
 
   TODO: Conectar con Supabase
   - Subir fotos a Supabase Storage
@@ -19,7 +37,35 @@ import { MobileShell } from "~/components/layout/MobileShell";
       }
 */
 
+type ListingForm = {
+  photos: string[]; // URLs de Supabase Storage (placeholder por ahora)
+  title: string;
+  category: string;
+  price: string; // string para no fight con el input; convertir a number al guardar
+  condition: string;
+  description: string;
+  acceptsOffers: boolean;
+};
+
+const INITIAL_FORM: ListingForm = {
+  photos: ["1", "2"],
+  title: "Mesa lateral de nogal",
+  category: "Muebles · Mesas",
+  price: "45",
+  condition: "Buen estado",
+  description: "Nogal macizo, estilo mid-century. Desgaste mínimo en la superficie…",
+  acceptsOffers: true,
+};
+
 const Sell: Component = () => {
+  const [form, setForm] = createStore<ListingForm>({ ...INITIAL_FORM });
+
+  // El botón se desactiva si faltan campos obligatorios.
+  // No es un createMemo porque solo se evalúa una vez por render del JSX,
+  // y el store ya rastrea las lecturas reactivamente.
+  const canContinue = () =>
+    form.title.trim().length > 0 && form.price.trim().length > 0;
+
   return (
     <MobileShell>
       <Title>Stoop — Nueva publicación</Title>
@@ -71,43 +117,71 @@ const Sell: Component = () => {
             </button>
           </div>
 
-          {/* Form fields */}
+          {/* Form fields — controlled via store path updates */}
           <FormField label="Título">
-            <p class="text-[15px] text-cream">Mesa lateral de nogal</p>
+            <input
+              type="text"
+              value={form.title}
+              onInput={(e) => setForm("title", e.currentTarget.value)}
+              class="w-full bg-transparent text-[15px] text-cream outline-none"
+            />
           </FormField>
           <FormField label="Categoría">
             <div class="flex items-center justify-between">
-              <span class="text-[15px]">Muebles · Mesas</span>
+              <span class="text-[15px]">{form.category}</span>
               <ChevronIcon />
             </div>
           </FormField>
           <div class="grid grid-cols-2 gap-2.5">
             <FormField label="Precio">
-              <p class="text-[15px]">$45</p>
+              <div class="flex items-center gap-1">
+                <span class="text-[15px] text-muted">$</span>
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  value={form.price}
+                  onInput={(e) =>
+                    setForm("price", e.currentTarget.value.replace(/[^\d]/g, ""))
+                  }
+                  class="w-full bg-transparent text-[15px] outline-none"
+                />
+              </div>
             </FormField>
             <FormField label="Condición">
-              <p class="text-[15px]">Buen estado</p>
+              <p class="text-[15px]">{form.condition}</p>
             </FormField>
           </div>
           <FormField label="Descripción" minHeight={90}>
-            <p class="text-sm leading-relaxed text-cream/75">
-              Nogal macizo, estilo mid-century. Desgaste mínimo en la superficie…
-            </p>
+            <textarea
+              value={form.description}
+              onInput={(e) => setForm("description", e.currentTarget.value)}
+              rows={3}
+              class="w-full resize-none bg-transparent text-sm leading-relaxed text-cream/85 outline-none"
+            />
           </FormField>
 
           {/* Toggle row */}
-          <div class="flex items-center justify-between rounded-md bg-card p-4">
+          <button
+            type="button"
+            onClick={() => setForm("acceptsOffers", (v) => !v)}
+            class="flex w-full items-center justify-between rounded-md bg-card p-4 text-left"
+          >
             <div>
               <p class="text-sm font-medium">Acepta ofertas</p>
               <p class="mt-0.5 text-[11px] text-muted">Permite a compradores negociar</p>
             </div>
-            <Toggle on={true} />
-          </div>
+            <Toggle on={form.acceptsOffers} />
+          </button>
         </main>
 
         {/* Sticky CTA */}
         <div class="cta-gradient shrink-0 px-5 py-4 pb-8">
-          <button class="btn-primary w-full">Continuar →</button>
+          <button
+            class="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!canContinue()}
+          >
+            Continuar →
+          </button>
         </div>
       </div>
     </MobileShell>
