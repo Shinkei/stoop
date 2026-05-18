@@ -1,5 +1,5 @@
 import { Title } from "@solidjs/meta";
-import { type Component, For } from "solid-js";
+import { type Component, createMemo, createSignal, For } from "solid-js";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { TabBar } from "~/components/layout/TabBar";
 
@@ -7,14 +7,21 @@ import { TabBar } from "~/components/layout/TabBar";
   Manage — /manage
   Dashboard del vendedor: stats, filtros y lista de publicaciones.
 
-  Esta es la base estática (filtro "Todas" activo, stats hardcoded).
-  Los filtros reactivos y las stats derivadas llegan en los commits
-  siguientes.
+  Conceptos clave de SolidJS aquí:
+
+  1. Múltiples createMemo derivados de la misma señal
+     - filtered() depende de filter()
+     - countOf(status) depende de ITEMS (constante, pero el patrón vale
+       para datos en vivo)
+     - Cada memo se recalcula solo cuando sus deps cambian. Switch de
+       filtro toca solo lo que filtra; las stats no recalculan.
+
+  2. Pasar callbacks al componente hijo
+     - FilterPill recibe onClick. Acceder a props.onClick mantiene la
+       referencia reactiva — no destructurar.
 
   TODO: Conectar con Supabase
   - supabase.from("listings").select("*, offers(count)").eq("seller_id", user.id)
-  - Acciones inline: editar, marcar vendido, eliminar (mutaciones con
-    "use server")
 */
 
 type ItemStatus = "active" | "reserved" | "draft" | "sold";
@@ -47,7 +54,28 @@ const STATUS_LABEL: Record<ItemStatus, string> = {
   sold: "VENDIDA",
 };
 
+type FilterId = "all" | ItemStatus;
+
+const FILTERS: { id: FilterId; label: string }[] = [
+  { id: "all", label: "Todas" },
+  { id: "active", label: "Activas" },
+  { id: "reserved", label: "Reservadas" },
+  { id: "draft", label: "Borradores" },
+  { id: "sold", label: "Vendidas" },
+];
+
 const Manage: Component = () => {
+  const [filter, setFilter] = createSignal<FilterId>("all");
+
+  // Lista filtrada — recalcula solo cuando filter() cambia.
+  const filtered = createMemo(() =>
+    filter() === "all" ? ITEMS : ITEMS.filter((it) => it.status === filter()),
+  );
+
+  // Count por filtro — para los pills.
+  const countOf = (id: FilterId) =>
+    id === "all" ? ITEMS.length : ITEMS.filter((it) => it.status === id).length;
+
   return (
     <MobileShell>
       <Title>Stoop — Mis publicaciones</Title>
@@ -63,7 +91,7 @@ const Manage: Component = () => {
             </h1>
           </div>
 
-          {/* Stats */}
+          {/* Stats (todavía hardcoded — pasan a derivadas en el siguiente commit) */}
           <div class="grid grid-cols-3 gap-2 px-5 pb-5">
             <StatCard value="5" label="Activas" />
             <StatCard value="15" label="Ofertas" accent />
@@ -72,18 +100,26 @@ const Manage: Component = () => {
 
           {/* Filter pills */}
           <div class="flex gap-2 overflow-x-auto px-5 pb-4">
-            <FilterPill label="Todas" count={8} active />
-            <FilterPill label="Activas" count={5} />
-            <FilterPill label="Reservadas" count={1} />
-            <FilterPill label="Borradores" count={1} />
-            <FilterPill label="Vendidas" count={1} />
+            <For each={FILTERS}>
+              {(f) => (
+                <FilterPill
+                  label={f.label}
+                  count={countOf(f.id)}
+                  active={filter() === f.id}
+                  onClick={() => setFilter(f.id)}
+                />
+              )}
+            </For>
           </div>
 
           {/* List */}
           <div class="px-5 pb-4">
-            <For each={ITEMS}>
+            <For each={filtered()}>
               {(item, i) => (
-                <ItemRow item={item} isLast={i() === ITEMS.length - 1} />
+                <ItemRow
+                  item={item}
+                  isLast={i() === filtered().length - 1}
+                />
               )}
             </For>
           </div>
@@ -113,9 +149,15 @@ const StatCard: Component<{ value: string; label: string; accent?: boolean }> = 
   </div>
 );
 
-const FilterPill: Component<{ label: string; count: number; active?: boolean }> = (props) => (
+const FilterPill: Component<{
+  label: string;
+  count: number;
+  active?: boolean;
+  onClick?: () => void;
+}> = (props) => (
   <button
-    class="shrink-0 rounded-pill px-3 py-1.5 text-[12px] font-medium"
+    onClick={props.onClick}
+    class="shrink-0 rounded-pill px-3 py-1.5 text-[12px] font-medium transition-colors"
     classList={{
       "bg-cream text-ink": props.active,
       "border border-hairline text-cream": !props.active,
