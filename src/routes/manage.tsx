@@ -9,14 +9,18 @@ import { TabBar } from "~/components/layout/TabBar";
 
   Conceptos clave de SolidJS aquí:
 
-  1. Múltiples createMemo derivados de la misma señal
+  1. Múltiples createMemo derivados de la misma fuente
      - filtered() depende de filter()
-     - countOf(status) depende de ITEMS (constante, pero el patrón vale
-       para datos en vivo)
+     - stats() depende de ITEMS (constante por ahora, pero el patrón
+       vale para datos en vivo)
      - Cada memo se recalcula solo cuando sus deps cambian. Switch de
        filtro toca solo lo que filtra; las stats no recalculan.
 
-  2. Pasar callbacks al componente hijo
+  2. Reduce dentro de createMemo
+     - Un solo recorrido produce las 3 stats: activas, ofertas, ganado.
+       Más eficiente que 3 filter().length por separado.
+
+  3. Pasar callbacks al componente hijo
      - FilterPill recibe onClick. Acceder a props.onClick mantiene la
        referencia reactiva — no destructurar.
 
@@ -76,6 +80,22 @@ const Manage: Component = () => {
   const countOf = (id: FilterId) =>
     id === "all" ? ITEMS.length : ITEMS.filter((it) => it.status === id).length;
 
+  // Stats agregadas — un solo recorrido (reduce) sobre los items:
+  //   active:   cuántos están activos
+  //   offers:   ofertas pendientes en activos y reservados
+  //   earned:   suma de precios de los vendidos
+  const stats = createMemo(() =>
+    ITEMS.reduce(
+      (acc, it) => {
+        if (it.status === "active") acc.active += 1;
+        if (it.status === "active" || it.status === "reserved") acc.offers += it.offers;
+        if (it.status === "sold") acc.earned += it.price;
+        return acc;
+      },
+      { active: 0, offers: 0, earned: 0 },
+    ),
+  );
+
   return (
     <MobileShell>
       <Title>Stoop — Mis publicaciones</Title>
@@ -91,11 +111,11 @@ const Manage: Component = () => {
             </h1>
           </div>
 
-          {/* Stats (todavía hardcoded — pasan a derivadas en el siguiente commit) */}
+          {/* Stats — derivadas de ITEMS con un único reduce */}
           <div class="grid grid-cols-3 gap-2 px-5 pb-5">
-            <StatCard value="5" label="Activas" />
-            <StatCard value="15" label="Ofertas" accent />
-            <StatCard value="$25" label="Ganado" />
+            <StatCard value={`${stats().active}`} label="Activas" />
+            <StatCard value={`${stats().offers}`} label="Ofertas" accent />
+            <StatCard value={`$${stats().earned}`} label="Ganado" />
           </div>
 
           {/* Filter pills */}
