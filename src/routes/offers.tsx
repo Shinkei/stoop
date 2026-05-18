@@ -1,23 +1,36 @@
 import { Title } from "@solidjs/meta";
-import { type Component, For } from "solid-js";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { TabBar } from "~/components/layout/TabBar";
 
 /*
   Offers Inbox — /offers
 
-  Estructura: header + tabs + "Mejor oferta" + lista.
-  Por ahora todo es estático con la primera pestaña activa.
-  La reactividad (filtrar por pestaña, marcar leídas) llega en
-  los siguientes commits.
+  Nuevos conceptos de SolidJS aquí:
+
+  1. createMemo(fn) para listas derivadas
+     - filtered() = createMemo(() => OFFERS.filter(o => o.status === tab()))
+     - Solo recalcula cuando tab() cambia. <For> recibe la lista filtrada
+       y solo crea/destruye los nodos que entran o salen — no re-renderiza
+       los que se mantienen.
+     - Sin memo, OFFERS.filter(...) correría en cada lectura. Para una
+       lista de 10 ítems da igual, pero el patrón importa.
+
+  2. createMemo vs función simple ()
+     - () => filter(...) también funciona, pero re-ejecuta en cada lectura.
+       Si la lista la leen varios nodos, el filter corre N veces.
+     - createMemo cachea el resultado hasta que una dependencia cambia.
+
+  3. Tab counts derivados
+     - count = createMemo(() => OFFERS.filter(o => o.status === id).length)
+     - Cuando aceptemos/rechacemos ofertas (próximo commit), los counts
+       se actualizan solos.
 
   TODO: Conectar con Supabase
   - supabase.from("offers").select("*, buyer:profiles(*), listing:listings(*)")
-  - Realtime para nuevas ofertas:
-      supabase.channel("offers")
-        .on("postgres_changes", { event: "INSERT", table: "offers" }, handler)
-        .subscribe();
 */
+
+type TabId = "incoming" | "sent" | "accepted";
 
 type Offer = {
   id: string;
@@ -28,8 +41,14 @@ type Offer = {
   time: string;
   unread: boolean;
   hue: number;
-  status: "incoming" | "sent" | "accepted";
+  status: TabId;
 };
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "incoming", label: "Recibidas" },
+  { id: "sent", label: "Enviadas" },
+  { id: "accepted", label: "Aceptadas" },
+];
 
 const OFFERS: Offer[] = [
   { id: "o1", name: "Jordan K.",  item: "Mesa lateral de nogal",   amount: 35, ask: 45, time: "12m", unread: true,  hue: 40,  status: "incoming" },
@@ -45,55 +64,87 @@ const OFFERS: Offer[] = [
 ];
 
 const Offers: Component = () => {
+  const [tab, setTab] = createSignal<TabId>("incoming");
+
+  // Lista derivada — recalcula solo cuando tab() cambia.
+  const filtered = createMemo(() => OFFERS.filter((o) => o.status === tab()));
+
+  // Counts por pestaña — también derivados; un día tendrán datos en vivo.
+  const countOf = (id: TabId) => OFFERS.filter((o) => o.status === id).length;
+
+  // Mejor oferta solo en la pestaña Recibidas (la primera, top score).
+  const bestOffer = createMemo(() =>
+    tab() === "incoming"
+      ? [...OFFERS.filter((o) => o.status === "incoming")].sort(
+          (a, b) => b.amount / b.ask - a.amount / a.ask,
+        )[0]
+      : undefined,
+  );
+
   return (
     <MobileShell>
       <Title>Stoop — Ofertas</Title>
       <div class="flex h-full flex-col">
         <main class="flex-1 overflow-y-auto">
-          {/* Header */}
+          {/* Header — el contador refleja la pestaña actual */}
           <div class="px-5 pt-14 pb-5">
             <p class="mb-1 text-[11px] tracking-wider text-muted uppercase">Bandeja</p>
             <h1 class="font-display text-[34px] leading-none tracking-tight">
-              Ofertas <span class="text-lime">· 5</span>
+              Ofertas <span class="text-lime">· {filtered().length}</span>
             </h1>
           </div>
 
           {/* Tabs */}
           <div class="flex gap-5 border-b border-hairline px-5">
-            <Tab label="Recibidas" count={5} active />
-            <Tab label="Enviadas" count={3} />
-            <Tab label="Aceptadas" count={2} />
+            <For each={TABS}>
+              {(t) => (
+                <Tab
+                  label={t.label}
+                  count={countOf(t.id)}
+                  active={tab() === t.id}
+                  onClick={() => setTab(t.id)}
+                />
+              )}
+            </For>
           </div>
 
-          {/* Mejor oferta */}
-          <section class="px-5 pt-4 pb-3">
-            <div class="rounded-lg bg-lime p-4 text-ink">
-              <div class="mb-2 flex items-center justify-between">
-                <p class="text-[11px] font-bold tracking-wider uppercase">Mejor oferta</p>
-                <span class="rounded-pill bg-ink px-2 py-1 text-[10px] font-semibold text-lime">
-                  EXPIRA EN 2H
-                </span>
-              </div>
-              <div class="mb-1 flex items-baseline gap-2">
-                <p class="font-display text-[36px] leading-none tracking-tight">$40</p>
-                <p class="text-xs">
-                  de <strong>Priya S.</strong> · Mesa lateral de nogal
-                </p>
-              </div>
-              <p class="mb-3 text-[11px] opacity-70">89% del precio · recogería hoy</p>
-              <div class="flex gap-2">
-                <button class="flex-1 rounded-pill bg-ink py-2.5 text-[13px] font-semibold text-lime">
-                  Aceptar
-                </button>
-                <button class="flex-1 rounded-pill border-[1.5px] border-ink py-2.5 text-[13px] font-semibold">
-                  Contraofertar
-                </button>
-              </div>
-            </div>
-          </section>
+          {/* Mejor oferta — solo en Recibidas */}
+          <Show when={bestOffer()}>
+            {(offer) => (
+              <section class="px-5 pt-4 pb-3">
+                <div class="rounded-lg bg-lime p-4 text-ink">
+                  <div class="mb-2 flex items-center justify-between">
+                    <p class="text-[11px] font-bold tracking-wider uppercase">Mejor oferta</p>
+                    <span class="rounded-pill bg-ink px-2 py-1 text-[10px] font-semibold text-lime">
+                      EXPIRA EN 2H
+                    </span>
+                  </div>
+                  <div class="mb-1 flex items-baseline gap-2">
+                    <p class="font-display text-[36px] leading-none tracking-tight">
+                      ${offer().amount}
+                    </p>
+                    <p class="text-xs">
+                      de <strong>{offer().name}</strong> · {offer().item}
+                    </p>
+                  </div>
+                  <p class="mb-3 text-[11px] opacity-70">
+                    {Math.round((offer().amount / offer().ask) * 100)}% del precio
+                  </p>
+                  <div class="flex gap-2">
+                    <button class="flex-1 rounded-pill bg-ink py-2.5 text-[13px] font-semibold text-lime">
+                      Aceptar
+                    </button>
+                    <button class="flex-1 rounded-pill border-[1.5px] border-ink py-2.5 text-[13px] font-semibold">
+                      Contraofertar
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+          </Show>
 
-          {/* Lista — filtrada por la pestaña activa (estático por ahora) */}
-          <OfferList offers={OFFERS.filter((o) => o.status === "incoming")} />
+          {/* Lista filtrada por pestaña */}
+          <OfferList offers={filtered()} />
         </main>
 
         <TabBar active="offers" />
@@ -117,8 +168,14 @@ const OfferList: Component<{ offers: Offer[] }> = (props) => (
   </>
 );
 
-const Tab: Component<{ label: string; count: number; active?: boolean }> = (props) => (
+const Tab: Component<{
+  label: string;
+  count: number;
+  active?: boolean;
+  onClick?: () => void;
+}> = (props) => (
   <button
+    onClick={props.onClick}
     class="-mb-px border-b-2 pb-3"
     classList={{
       "border-lime": props.active,
