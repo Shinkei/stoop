@@ -1,5 +1,6 @@
 import { Title } from "@solidjs/meta";
 import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { createStore } from "solid-js/store";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { TabBar } from "~/components/layout/TabBar";
 
@@ -23,8 +24,16 @@ import { TabBar } from "~/components/layout/TabBar";
 
   3. Tab counts derivados
      - count = createMemo(() => OFFERS.filter(o => o.status === id).length)
-     - Cuando aceptemos/rechacemos ofertas (próximo commit), los counts
-       se actualizan solos.
+     - Cuando cambia algo (marcar leída, etc.), los counts y la lista
+       se actualizan solos sin intervención manual.
+
+  4. createStore para una lista mutable por ID
+     - createStore<Offer[]>(...) devuelve un proxy reactivo sobre el array.
+     - setOffers(o => o.id === id, "unread", false) busca el item que
+       cumple el predicado y le cambia una propiedad. Reactividad granular:
+       solo el nodo que lee `unread` de ese ítem se re-evalúa.
+     - Patrón clave: el primer argumento puede ser un índice, un predicado,
+       o el rango {from, to}. Devuelve los items que pasaron.
 
   TODO: Conectar con Supabase
   - supabase.from("offers").select("*, buyer:profiles(*), listing:listings(*)")
@@ -64,22 +73,30 @@ const OFFERS: Offer[] = [
 ];
 
 const Offers: Component = () => {
+  const [offers, setOffers] = createStore<Offer[]>(OFFERS);
   const [tab, setTab] = createSignal<TabId>("incoming");
 
-  // Lista derivada — recalcula solo cuando tab() cambia.
-  const filtered = createMemo(() => OFFERS.filter((o) => o.status === tab()));
+  // Lista derivada — recalcula cuando tab() o offers cambia.
+  const filtered = createMemo(() => offers.filter((o) => o.status === tab()));
 
-  // Counts por pestaña — también derivados; un día tendrán datos en vivo.
-  const countOf = (id: TabId) => OFFERS.filter((o) => o.status === id).length;
+  // Counts por pestaña — derivados del store.
+  const countOf = (id: TabId) => offers.filter((o) => o.status === id).length;
 
-  // Mejor oferta solo en la pestaña Recibidas (la primera, top score).
+  // Mejor oferta: la incoming con mayor % del precio pedido.
   const bestOffer = createMemo(() =>
     tab() === "incoming"
-      ? [...OFFERS.filter((o) => o.status === "incoming")].sort(
+      ? [...offers.filter((o) => o.status === "incoming")].sort(
           (a, b) => b.amount / b.ask - a.amount / a.ask,
         )[0]
       : undefined,
   );
+
+  // Marca una oferta como leída. setOffers acepta un predicado
+  // como primer argumento — busca el item que cumple y solo cambia
+  // la prop indicada.
+  const markRead = (id: string) => {
+    setOffers((o) => o.id === id, "unread", false);
+  };
 
   return (
     <MobileShell>
@@ -144,7 +161,7 @@ const Offers: Component = () => {
           </Show>
 
           {/* Lista filtrada por pestaña */}
-          <OfferList offers={filtered()} />
+          <OfferList offers={filtered()} onRowClick={markRead} />
         </main>
 
         <TabBar active="offers" />
@@ -153,7 +170,10 @@ const Offers: Component = () => {
   );
 };
 
-const OfferList: Component<{ offers: Offer[] }> = (props) => (
+const OfferList: Component<{
+  offers: Offer[];
+  onRowClick: (id: string) => void;
+}> = (props) => (
   <>
     <p class="px-5 pt-2 pb-1 text-[11px] tracking-wider text-muted uppercase">
       Todas las ofertas
@@ -161,7 +181,11 @@ const OfferList: Component<{ offers: Offer[] }> = (props) => (
     <div class="px-5 pb-4">
       <For each={props.offers}>
         {(offer, i) => (
-          <OfferRow offer={offer} isLast={i() === props.offers.length - 1} />
+          <OfferRow
+            offer={offer}
+            isLast={i() === props.offers.length - 1}
+            onClick={() => props.onRowClick(offer.id)}
+          />
         )}
       </For>
     </div>
@@ -195,9 +219,14 @@ const Tab: Component<{
   </button>
 );
 
-const OfferRow: Component<{ offer: Offer; isLast: boolean }> = (props) => (
-  <div
-    class="flex items-center gap-3 py-3.5"
+const OfferRow: Component<{
+  offer: Offer;
+  isLast: boolean;
+  onClick: () => void;
+}> = (props) => (
+  <button
+    onClick={props.onClick}
+    class="flex w-full items-center gap-3 py-3.5 text-left"
     classList={{ "border-b border-hairline": !props.isLast }}
   >
     <div
@@ -226,7 +255,7 @@ const OfferRow: Component<{ offer: Offer; isLast: boolean }> = (props) => (
         Ofreció <span class="font-semibold text-lime">${props.offer.amount}</span> por {props.offer.item}
       </p>
     </div>
-  </div>
+  </button>
 );
 
 export default Offers;
