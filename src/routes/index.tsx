@@ -1,46 +1,47 @@
 import { Title } from "@solidjs/meta";
-import { type Component, createSignal, For } from "solid-js";
+import { A, createAsync } from "@solidjs/router";
+import { type Component, createSignal, For, Show, Suspense } from "solid-js";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { TabBar } from "~/components/layout/TabBar";
+import { getListings, hueFromId, type ListingRow } from "~/lib/listings";
 
 /*
   Home — Pantalla principal del marketplace.
 
-  Conceptos de SolidJS que aparecen aquí:
-  - createSignal: equivalente a useState, pero sin re-renders.
-    Solo actualiza el nodo del DOM que leyó la señal.
-  - <For>: equivalente a .map() en React. Más eficiente porque
-    hace diff de la lista y solo re-crea los items que cambian.
-    Funciona igual para scroll horizontal y grid vertical —
-    el layout lo define CSS, no el componente.
-  - Acceso a señales: selectedCategory() con paréntesis (es una función).
-    En React sería solo `selectedCategory`.
+  Conceptos clave de SolidJS aquí:
 
-  TODO: Conectar con Supabase
-  - Reemplazar FEATURED y LISTINGS con createAsync(() => getListings())
-  - createAsync es el equivalente a useQuery/fetch en SolidStart
+  - createAsync(fn): equivalente a useQuery/use(promise) en React. Devuelve una
+    señal cuyo valor es undefined mientras carga, y el dato cuando resuelve.
+    Se integra con <Suspense> para mostrar el fallback de loading sin booleanos.
+
+  - <For>: equivalente a .map() en React, pero más eficiente — solo crea/destruye
+    los nodos que entran o salen de la lista; los que se mantienen no se re-renderizan.
+
+  - Acceso a señales: listings() con paréntesis (es una función getter, no un valor).
+
+  Sobre la foto:
+    El seed actual no tiene URLs de fotos (las subiremos con Storage cuando
+    conectemos /sell). Mientras tanto, hueFromId(id) genera un color
+    determinístico para el placeholder, así cada listing se ve distinto pero
+    estable entre recargas.
 */
 
 const CATEGORIES = ["Todo", "Muebles", "Ropa", "Libros", "Cocina", "Niños"] as const;
 
-// Primeros 3 ítems en el strip horizontal de "Recién publicados"
-const FEATURED = [
-  { id: "1", title: "Mesa lateral de nogal", price: 45, distance: "2 cuadras", hue: 40 },
-  { id: "2", title: "Chaqueta denim Levi's", price: 28, distance: "5 cuadras", hue: 220 },
-  { id: "3", title: "Set Pyrex vintage", price: 34, distance: "0.3 km", hue: 180 },
-];
-
-const LISTINGS = [
-  { id: "1", title: "Mesa lateral de nogal", price: 45, distance: "2 cuadras", hue: 40, imgHeight: 160 },
-  { id: "2", title: "Chaqueta denim Levi's", price: 28, distance: "5 cuadras", hue: 220, imgHeight: 128 },
-  { id: "3", title: "Set Pyrex vintage", price: 34, distance: "0.3 km", hue: 180, imgHeight: 144 },
-  { id: "4", title: "Silla estilo Eames", price: 120, distance: "1 cuadra", hue: 30, imgHeight: 176 },
-  { id: "5", title: "Colección de vinilos (28)", price: 85, distance: "0.5 km", hue: 280, imgHeight: 136 },
-  { id: "6", title: "Bolso Filson", price: 60, distance: "3 cuadras", hue: 80, imgHeight: 152 },
-];
-
 const Home: Component = () => {
   const [selectedCategory, setSelectedCategory] = createSignal("Todo");
+
+  // createAsync se suscribe a cualquier señal que lea adentro:
+  // selectedCategory() se lee en el callback, así que al cambiar de pestaña
+  // la query se re-ejecuta sola contra Supabase con el nuevo filtro.
+  // "Todo" es el caso sin filtro — getListings() ignora ese valor.
+  const listings = createAsync<ListingRow[]>(
+    () => getListings(selectedCategory()),
+    { initialValue: [] },
+  );
+
+  // Featured = los 3 más recientes (los primeros del array ya está ordenado).
+  const featured = () => listings().slice(0, 3);
 
   return (
     <MobileShell>
@@ -63,13 +64,13 @@ const Home: Component = () => {
             </button>
           </div>
 
-          {/* Search pill — rounded-lg = 16px per design system */}
-          <div class="px-5 pb-5">
+          {/* Search pill */}
+          <A href="/search" class="block px-5 pb-5">
             <div class="flex h-12 items-center gap-3 rounded-lg bg-card px-4">
               <SearchIcon />
               <span class="text-sm text-muted">Busca en tu barrio…</span>
             </div>
-          </div>
+          </A>
 
           {/* Category chips */}
           <div class="flex gap-2 overflow-x-auto px-5 pb-6">
@@ -89,69 +90,103 @@ const Home: Component = () => {
             </For>
           </div>
 
-          {/* Recién publicados — strip horizontal
-              overflow-x-auto: scroll nativo del browser, sin librería.
-              Los items tienen ancho fijo (w-[170px]) con shrink-0 para
-              que no colapsen al hacer wrap. El mismo <For> que el grid
-              vertical — el layout lo define CSS, no el componente. */}
-          <div class="flex items-baseline justify-between px-5 pb-3">
-            <h2 class="font-display text-[22px] tracking-tight">Recién publicados</h2>
-            <span class="text-xs text-muted">Ver todos →</span>
-          </div>
-          <div class="flex gap-3 overflow-x-auto px-5 pb-7">
-            <For each={FEATURED}>
-              {(item) => (
-                <a href={`/item/${item.id}`} class="block w-[170px] shrink-0">
-                  <div
-                    class="mb-2 rounded-xl"
-                    style={{ height: "180px", background: `oklch(0.35 0.06 ${item.hue})` }}
-                  />
-                  <p class="mb-0.5 text-[14px] leading-tight font-medium">{item.title}</p>
-                  <div class="flex justify-between text-[12px]">
-                    <span class="font-semibold text-lime">${item.price}</span>
-                    <span class="text-muted">{item.distance}</span>
-                  </div>
-                </a>
-              )}
-            </For>
-          </div>
+          <Suspense fallback={<FeedSkeleton />}>
+            <Show when={listings().length > 0} fallback={<EmptyFeed />}>
+              {/* Recién publicados */}
+              <div class="flex items-baseline justify-between px-5 pb-3">
+                <h2 class="font-display text-[22px] tracking-tight">Recién publicados</h2>
+                <span class="text-xs text-muted">Ver todos →</span>
+              </div>
+              <div class="flex gap-3 overflow-x-auto px-5 pb-7">
+                <For each={featured()}>{(item) => <FeaturedCard item={item} />}</For>
+              </div>
 
-          {/* De tus vecinos — section title */}
-          <div class="px-5 pb-3">
-            <h2 class="font-display text-[22px] tracking-tight">De tus vecinos</h2>
-          </div>
-
-          {/* De tus vecinos — grid 2 columnas con alturas variables.
-              Alturas distintas por ítem (del diseño: h × 0.8) añaden
-              ritmo visual sin romper el grid. El valor viene del dato,
-              no de CSS fijo, para que cuando conectemos Supabase cada
-              ítem pueda tener su propia proporción de foto. */}
-          <div class="grid grid-cols-2 gap-3 px-5 pb-8">
-            <For each={LISTINGS}>
-              {(item) => (
-                <a href={`/item/${item.id}`} class="block">
-                  <div
-                    class="mb-2 rounded-xl"
-                    style={{
-                      height: `${item.imgHeight}px`,
-                      background: `oklch(0.35 0.06 ${item.hue})`,
-                    }}
-                  />
-                  <p class="mb-0.5 text-[13px] leading-tight font-medium">{item.title}</p>
-                  <div class="flex justify-between text-[11px]">
-                    <span class="font-semibold text-lime">${item.price}</span>
-                    <span class="text-muted">{item.distance}</span>
-                  </div>
-                </a>
-              )}
-            </For>
-          </div>
+              {/* De tus vecinos — grid 2 columnas */}
+              <div class="px-5 pb-3">
+                <h2 class="font-display text-[22px] tracking-tight">De tus vecinos</h2>
+              </div>
+              <div class="grid grid-cols-2 gap-3 px-5 pb-8">
+                <For each={listings()}>{(item) => <FeedCard item={item} />}</For>
+              </div>
+            </Show>
+          </Suspense>
         </main>
 
         <TabBar active="home" />
       </div>
     </MobileShell>
   );
+};
+
+// ── Cards ────────────────────────────────────────────────────────
+
+const FeaturedCard: Component<{ item: ListingRow }> = (props) => (
+  <A href={`/item/${props.item.id}`} class="block w-[170px] shrink-0">
+    <Thumb id={props.item.id} photo={props.item.photos?.[0]} height={180} />
+    <p class="mt-2 mb-0.5 text-[14px] leading-tight font-medium">{props.item.title}</p>
+    <div class="flex justify-between text-[12px]">
+      <span class="font-semibold text-lime">${formatPrice(props.item.price)}</span>
+      <span class="truncate text-muted">{props.item.neighborhood}</span>
+    </div>
+  </A>
+);
+
+const FeedCard: Component<{ item: ListingRow }> = (props) => {
+  // Altura derivada del id — varía entre 128 y 188 sin parecer aleatoria.
+  const height = () => 128 + (hueFromId(props.item.id) % 60);
+  return (
+    <A href={`/item/${props.item.id}`} class="block">
+      <Thumb id={props.item.id} photo={props.item.photos?.[0]} height={height()} />
+      <p class="mt-2 mb-0.5 text-[13px] leading-tight font-medium">{props.item.title}</p>
+      <div class="flex justify-between text-[11px]">
+        <span class="font-semibold text-lime">${formatPrice(props.item.price)}</span>
+        <span class="truncate text-muted">{props.item.neighborhood}</span>
+      </div>
+    </A>
+  );
+};
+
+const Thumb: Component<{ id: string; photo: string | undefined; height: number }> = (props) => (
+  <div
+    class="rounded-xl bg-cover bg-center"
+    style={{
+      height: `${props.height}px`,
+      background: props.photo
+        ? `url(${props.photo}) center/cover`
+        : `oklch(0.35 0.06 ${hueFromId(props.id)})`,
+    }}
+  />
+);
+
+// ── States ───────────────────────────────────────────────────────
+
+const FeedSkeleton: Component = () => (
+  <div class="grid grid-cols-2 gap-3 px-5 pb-8">
+    <For each={[1, 2, 3, 4]}>
+      {() => (
+        <div class="animate-pulse">
+          <div class="mb-2 h-40 rounded-xl bg-card" />
+          <div class="mb-1 h-3 w-3/4 rounded-md bg-card" />
+          <div class="h-3 w-1/3 rounded-md bg-card" />
+        </div>
+      )}
+    </For>
+  </div>
+);
+
+const EmptyFeed: Component = () => (
+  <div class="flex flex-col items-center px-8 py-12 text-center">
+    <p class="mb-2 text-sm text-cream">Aún no hay publicaciones</p>
+    <p class="text-[12px] text-muted">Sé el primero en compartir algo con tus vecinos.</p>
+  </div>
+);
+
+// ── Helpers / Icons ──────────────────────────────────────────────
+
+const formatPrice = (price: number) => {
+  // DB devuelve numeric como string; aseguramos number sin decimales para precios enteros.
+  const n = typeof price === "string" ? parseFloat(price) : price;
+  return Number.isInteger(n) ? n.toString() : n.toFixed(2);
 };
 
 const SearchIcon = () => (

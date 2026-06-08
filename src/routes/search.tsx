@@ -1,7 +1,18 @@
 import { Title } from "@solidjs/meta";
-import { type Component, createEffect, createSignal, For, onMount, Show } from "solid-js";
+import { A, createAsync } from "@solidjs/router";
+import {
+  type Component,
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  Suspense,
+} from "solid-js";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { TabBar } from "~/components/layout/TabBar";
+import { hueFromId, type ListingRow, searchListings } from "~/lib/listings";
 
 /*
   Search — /search
@@ -12,40 +23,24 @@ import { TabBar } from "~/components/layout/TabBar";
      - value={query()} y onInput={(e) => setQuery(...)} conectan el
        <input> a la señal en ambas direcciones.
      - Solid usa onInput, NO onChange.
-       En React, onChange dispara en cada tecla (comportamiento custom).
-       En Solid (y el DOM nativo), onChange solo dispara al perder foco,
-       y onInput es el que dispara en cada tecla. Solid sigue el DOM.
-     - e.currentTarget está bien tipado a HTMLInputElement sin casting:
-       Solid no envuelve los eventos en SyntheticEvent como React.
 
-  2. Componentes con props reactivas
-     - SearchIcon recibe `active`. CRÍTICO: nunca destructurar props
-       (`const { active } = props`) — pierde la reactividad porque
-       captura el valor en el momento de la llamada.
-     - Acceder via props.active mantiene el getter reactivo que el
-       compilador de Solid genera para cada prop.
+  2. Debounce con createEffect + setTimeout
+     - El usuario escribe rápido; cada keystroke actualiza query() pero
+       no queremos hacer 1 request por tecla.
+     - createEffect rastrea query(); arrancamos un timer y solo cuando
+       pasa el delay sin más cambios escribimos en debouncedQuery().
+     - onCleanup limpia el timer anterior cuando query() vuelve a cambiar.
+     - createAsync se suscribe a debouncedQuery() — solo re-fetcha cuando
+       el valor estable cambia.
 
-  4. Mutar señales con listas
-     - setRecents(prev => [term, ...prev.filter(t => t !== term)])
-       sigue el patrón "función con estado previo" igual que React.
-     - Solid no requiere inmutabilidad estricta (createStore permite
-       mutación directa), pero usar spreads aquí mantiene el estilo
-       funcional del resto del código.
+  3. createAsync con dependencia reactiva
+     - searchListings(debounced()) lee la señal adentro; cualquier cambio
+       re-ejecuta la query y suspende el árbol envuelto en <Suspense>.
 
-  5. onMount + createEffect (efectos / side-effects)
-     - onMount: corre UNA vez cuando el componente se monta, siempre en
-       el cliente. Equivalente a useEffect(() => ..., []) de React.
-       Es el lugar correcto para leer del DOM o de localStorage (que
-       no existe durante SSR).
-     - createEffect: corre cuando alguna señal que lee cambia. Las
-       dependencias se rastrean automáticamente (sin array de deps).
-       Aquí lo usamos para escribir en localStorage cada vez que
-       recents() cambia.
-     - createEffect NO corre en el servidor, solo después de hidratar.
-
-  TODO: Conectar con Supabase
-  - supabase.from("listings").textSearch("title", query()) para resultados
-  - Filtrar categorías por count si hay query activa
+  4. onMount + createEffect para localStorage
+     - onMount: corre UNA vez cuando el componente se monta, en cliente.
+     - createEffect: corre cuando alguna señal que lee cambia. Persiste
+       recents() en localStorage sin manejo manual.
 */
 
 const STORAGE_KEY = "stoop:recent-searches";
@@ -57,21 +52,22 @@ const INITIAL_RECENTS = [
   "bici de niño",
 ];
 
-type Category = { name: string; count: number; hue: number };
+type Category = { name: string; hue: number };
 
 const CATEGORIES: Category[] = [
-  { name: "Muebles", count: 284, hue: 40 },
-  { name: "Ropa", count: 512, hue: 340 },
-  { name: "Libros y media", count: 167, hue: 80 },
-  { name: "Cocina", count: 201, hue: 200 },
-  { name: "Niños", count: 98, hue: 300 },
-  { name: "Electrónica", count: 143, hue: 220 },
-  { name: "Jardín", count: 76, hue: 140 },
-  { name: "Arte y deco", count: 189, hue: 20 },
+  { name: "Muebles", hue: 40 },
+  { name: "Ropa", hue: 340 },
+  { name: "Libros", hue: 80 },
+  { name: "Cocina", hue: 200 },
+  { name: "Niños", hue: 300 },
+  { name: "Electrónica", hue: 220 },
+  { name: "Jardín", hue: 140 },
+  { name: "Arte", hue: 20 },
 ];
 
 const Search: Component = () => {
   const [query, setQuery] = createSignal("");
+  const [debounced, setDebounced] = createSignal("");
   const [recents, setRecents] = createSignal<string[]>(INITIAL_RECENTS);
 
   // Hidratar desde localStorage al montar (cliente only).
@@ -87,9 +83,22 @@ const Search: Component = () => {
   });
 
   // Persistir en localStorage cada vez que recents() cambia.
-  // createEffect se suscribe a recents() automáticamente.
   createEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(recents()));
+  });
+
+  // Debounce: 250ms tras el último keystroke se considera "estable".
+  createEffect(() => {
+    const v = query();
+    const t = setTimeout(() => setDebounced(v), 250);
+    onCleanup(() => clearTimeout(t));
+  });
+
+  const trimmed = () => debounced().trim();
+  const hasQuery = () => trimmed().length > 0;
+
+  const results = createAsync<ListingRow[]>(() => searchListings(trimmed()), {
+    initialValue: [],
   });
 
   // Click en un chip: rellena el input y mueve el término al frente.
@@ -97,6 +106,16 @@ const Search: Component = () => {
     setQuery(term);
     setRecents((prev) => [term, ...prev.filter((t) => t !== term)]);
   };
+
+  // Cuando el usuario lanza una búsqueda con texto válido, la promovemos
+  // a recents al primer resultado estable. Lo metemos en un effect para
+  // que se dispare cuando trimmed() cambia.
+  createEffect(() => {
+    const t = trimmed();
+    if (t.length >= 2) {
+      setRecents((prev) => [t, ...prev.filter((r) => r !== t)].slice(0, 8));
+    }
+  });
 
   return (
     <MobileShell>
@@ -130,61 +149,124 @@ const Search: Component = () => {
             </div>
           </div>
 
-          {/* Recientes — visible solo si hay items en la lista */}
-          <Show when={recents().length > 0}>
-            <section class="px-5 pb-6">
-              <div class="mb-3 flex items-baseline justify-between">
-                <p class="text-[11px] font-semibold tracking-wider text-muted uppercase">
-                  Recientes
-                </p>
-                <button onClick={() => setRecents([])} class="text-[11px] text-muted">
-                  Borrar
-                </button>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <For each={recents()}>
-                  {(term) => (
-                    <button
-                      onClick={() => useRecent(term)}
-                      class="flex items-center gap-1.5 rounded-full border border-hairline px-3.5 py-2 text-[13px] text-cream"
-                    >
-                      <ClockIcon />
-                      {term}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </section>
-          </Show>
-
-          {/* Categorías */}
-          <section class="px-5 pb-4">
-            <p class="mb-3 text-[11px] font-semibold tracking-wider text-muted uppercase">
-              Explora por categoría
-            </p>
-            <div class="grid grid-cols-2 gap-2.5">
-              <For each={CATEGORIES}>
-                {(cat) => (
-                  <button class="relative h-[100px] overflow-hidden rounded-md text-left">
-                    <div
-                      class="absolute inset-0"
-                      style={{ background: `oklch(0.45 0.08 ${cat.hue})` }}
-                    />
-                    <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-ink/85 to-ink/10 px-3 py-2.5">
-                      <p class="text-sm font-semibold text-cream">{cat.name}</p>
-                      <p class="text-[11px] text-cream/70">{cat.count} ítems</p>
+          <Show
+            when={hasQuery()}
+            fallback={
+              <>
+                <Show when={recents().length > 0}>
+                  <section class="px-5 pb-6">
+                    <div class="mb-3 flex items-baseline justify-between">
+                      <p class="text-[11px] font-semibold tracking-wider text-muted uppercase">
+                        Recientes
+                      </p>
+                      <button onClick={() => setRecents([])} class="text-[11px] text-muted">
+                        Borrar
+                      </button>
                     </div>
-                  </button>
-                )}
-              </For>
-            </div>
-          </section>
+                    <div class="flex flex-wrap gap-2">
+                      <For each={recents()}>
+                        {(term) => (
+                          <button
+                            onClick={() => useRecent(term)}
+                            class="flex items-center gap-1.5 rounded-full border border-hairline px-3.5 py-2 text-[13px] text-cream"
+                          >
+                            <ClockIcon />
+                            {term}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </section>
+                </Show>
+
+                {/* Categorías */}
+                <section class="px-5 pb-4">
+                  <p class="mb-3 text-[11px] font-semibold tracking-wider text-muted uppercase">
+                    Explora por categoría
+                  </p>
+                  <div class="grid grid-cols-2 gap-2.5">
+                    <For each={CATEGORIES}>
+                      {(cat) => (
+                        <button
+                          onClick={() => setQuery(cat.name)}
+                          class="relative h-[100px] overflow-hidden rounded-md text-left"
+                        >
+                          <div
+                            class="absolute inset-0"
+                            style={{ background: `oklch(0.45 0.08 ${cat.hue})` }}
+                          />
+                          <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-ink/85 to-ink/10 px-3 py-2.5">
+                            <p class="text-sm font-semibold text-cream">{cat.name}</p>
+                          </div>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </section>
+              </>
+            }
+          >
+            <Suspense fallback={<ResultsSkeleton />}>
+              <Show when={results().length > 0} fallback={<EmptyResults query={trimmed()} />}>
+                <p class="px-5 pt-2 pb-3 text-[11px] font-semibold tracking-wider text-muted uppercase">
+                  {results().length} resultado{results().length === 1 ? "" : "s"}
+                </p>
+                <div class="grid grid-cols-2 gap-3 px-5 pb-8">
+                  <For each={results()}>{(item) => <ResultCard item={item} />}</For>
+                </div>
+              </Show>
+            </Suspense>
+          </Show>
         </main>
 
         <TabBar active="search" />
       </div>
     </MobileShell>
   );
+};
+
+const ResultCard: Component<{ item: ListingRow }> = (props) => (
+  <A href={`/item/${props.item.id}`} class="block">
+    <div
+      class="mb-2 h-36 rounded-xl bg-cover bg-center"
+      style={{
+        background: props.item.photos?.[0]
+          ? `url(${props.item.photos[0]}) center/cover`
+          : `oklch(0.45 0.08 ${hueFromId(props.item.id)})`,
+      }}
+    />
+    <p class="mb-0.5 text-[13px] leading-tight font-medium">{props.item.title}</p>
+    <div class="flex justify-between text-[11px]">
+      <span class="font-semibold text-lime">${formatPrice(props.item.price)}</span>
+      <span class="truncate text-muted">{props.item.neighborhood}</span>
+    </div>
+  </A>
+);
+
+const ResultsSkeleton: Component = () => (
+  <div class="grid grid-cols-2 gap-3 px-5 pt-2 pb-8">
+    <For each={[1, 2, 3, 4]}>
+      {() => (
+        <div class="animate-pulse">
+          <div class="mb-2 h-36 rounded-xl bg-card" />
+          <div class="mb-1 h-3 w-3/4 rounded-md bg-card" />
+          <div class="h-3 w-1/3 rounded-md bg-card" />
+        </div>
+      )}
+    </For>
+  </div>
+);
+
+const EmptyResults: Component<{ query: string }> = (props) => (
+  <div class="flex flex-col items-center px-8 py-12 text-center">
+    <p class="mb-2 text-sm text-cream">Sin resultados para "{props.query}"</p>
+    <p class="text-[12px] text-muted">Prueba con otra palabra o categoría.</p>
+  </div>
+);
+
+const formatPrice = (price: number) => {
+  const n = typeof price === "string" ? parseFloat(price) : price;
+  return Number.isInteger(n) ? n.toString() : n.toFixed(2);
 };
 
 const SearchIcon: Component<{ active?: boolean }> = (props) => (

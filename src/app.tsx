@@ -2,7 +2,12 @@ import { MetaProvider, Title } from "@solidjs/meta";
 import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { Suspense } from "solid-js";
+import { initAuth } from "~/lib/auth";
 import "~/styles/app.css";
+
+// Arranca la suscripción a Supabase auth en el cliente.
+// initAuth() es idempotente y no hace nada en SSR.
+initAuth();
 
 /*
   app.tsx es el punto de entrada de SolidStart.

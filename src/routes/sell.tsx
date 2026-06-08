@@ -1,8 +1,19 @@
 import { Title } from "@solidjs/meta";
-import { A } from "@solidjs/router";
-import { type Component, createSignal, For, type JSX, Match, Switch } from "solid-js";
+import { A, useNavigate } from "@solidjs/router";
+import {
+  type Component,
+  createEffect,
+  createSignal,
+  For,
+  type JSX,
+  Match,
+  Show,
+  Switch,
+} from "solid-js";
 import { createStore } from "solid-js/store";
 import { MobileShell } from "~/components/layout/MobileShell";
+import { currentUser, isAuthenticated, isAuthLoading } from "~/lib/auth";
+import { createListing, type NewListing } from "~/lib/listings";
 
 /*
   Sell — /sell
@@ -33,13 +44,12 @@ import { MobileShell } from "~/components/layout/MobileShell";
      - <Show> sirve para 2 estados (truthy/fallback); <Switch> para N.
      - El paso del wizard se selecciona con <Match when={step() === N}>.
 
-  TODO: Conectar con Supabase
-  - Subir fotos a Supabase Storage
-  - Insert con "use server":
-      async function createListing(data: ListingInsert) {
-        "use server";
-        return supabase.from("listings").insert(data).select().single();
-      }
+  4. Submit + auth + navigate
+     - createListing() es una mutación que requiere auth. Si no hay user
+       cuando el componente monta, redirigimos a /login con createEffect.
+     - Tras crear el listing, navegamos a /manage (donde getMyListings
+       se revalida automáticamente porque createListing llama a
+       revalidate(getMyListings.key) por dentro).
 */
 
 type ListingForm = {
@@ -50,16 +60,18 @@ type ListingForm = {
   condition: string;
   description: string;
   acceptsOffers: boolean;
+  neighborhood: string;
 };
 
 const INITIAL_FORM: ListingForm = {
-  photos: ["1", "2"],
-  title: "Mesa lateral de nogal",
-  category: "Muebles · Mesas",
-  price: "45",
+  photos: [],
+  title: "",
+  category: "Muebles",
+  price: "",
   condition: "Buen estado",
-  description: "Nogal macizo, estilo mid-century. Desgaste mínimo en la superficie…",
+  description: "",
   acceptsOffers: true,
+  neighborhood: "Bedford-Stuyvesant",
 };
 
 const STEPS = [
@@ -71,17 +83,27 @@ const STEPS = [
 type StepId = (typeof STEPS)[number]["id"];
 
 const Sell: Component = () => {
+  const navigate = useNavigate();
   const [form, setForm] = createStore<ListingForm>({ ...INITIAL_FORM });
   const [step, setStep] = createSignal<StepId>(1);
+  const [submitting, setSubmitting] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  createEffect(() => {
+    if (!isAuthLoading() && !isAuthenticated()) {
+      navigate("/login", { replace: true });
+    }
+  });
 
   const currentStep = () => STEPS.find((s) => s.id === step())!;
   const isLastStep = () => step() === STEPS.length;
 
   // Validación por paso — solo bloquea cuando faltan datos del paso actual.
+  // En el paso 1 permitimos seguir aunque no haya fotos: el modelo todavía
+  // no acepta uploads reales y el step muestra placeholders.
   const canContinue = () => {
+    if (submitting()) return false;
     switch (step()) {
-      case 1:
-        return form.photos.length > 0;
       case 2:
         return form.title.trim().length > 0 && form.price.trim().length > 0;
       default:
@@ -89,10 +111,41 @@ const Sell: Component = () => {
     }
   };
 
+  const submit = async () => {
+    const user = currentUser();
+    if (!user) {
+      navigate("/login", { replace: true });
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const payload: NewListing = {
+        title: form.title.trim(),
+        category: form.category,
+        price: Number(form.price),
+        condition: form.condition,
+        description: form.description.trim() || null,
+        accepts_offers: form.acceptsOffers,
+        neighborhood: form.neighborhood.trim() || null,
+        photos: form.photos.length > 0 ? form.photos : null,
+        status: "active",
+      };
+      await createListing(user.id, payload);
+      navigate("/manage", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al publicar");
+      setSubmitting(false);
+    }
+  };
+
   const goNext = () => {
     if (!canContinue()) return;
-    if (!isLastStep()) setStep((s) => (s + 1) as StepId);
-    // TODO: en el último paso, llamar a createListing(form) y navegar a /manage.
+    if (isLastStep()) {
+      submit();
+      return;
+    }
+    setStep((s) => (s + 1) as StepId);
   };
 
   const goBack = () => {
@@ -153,13 +206,13 @@ const Sell: Component = () => {
         <main class="flex-1 overflow-y-auto px-5">
           <Switch>
             <Match when={step() === 1}>
-              <StepPhotos form={form} setForm={setForm} />
+              <StepPhotos />
             </Match>
             <Match when={step() === 2}>
               <StepDetails form={form} setForm={setForm} />
             </Match>
             <Match when={step() === 3}>
-              <StepPickup />
+              <StepPickup form={form} setForm={setForm} />
             </Match>
             <Match when={step() === 4}>
               <StepReview form={form} />
@@ -169,12 +222,23 @@ const Sell: Component = () => {
 
         {/* Sticky CTA */}
         <div class="cta-gradient shrink-0 px-5 py-4 pb-8">
+          <Show when={error()}>
+            {(msg) => (
+              <p class="mb-2 text-center text-[12px] text-danger" role="alert">
+                {msg()}
+              </p>
+            )}
+          </Show>
           <button
             onClick={goNext}
             class="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40"
             disabled={!canContinue()}
           >
-            {isLastStep() ? "Publicar" : "Continuar →"}
+            <Switch>
+              <Match when={submitting()}>Publicando…</Match>
+              <Match when={isLastStep()}>Publicar</Match>
+              <Match when={!isLastStep()}>Continuar →</Match>
+            </Switch>
           </button>
         </div>
       </div>
@@ -189,11 +253,12 @@ type StepProps = {
   setForm: ReturnType<typeof createStore<ListingForm>>[1];
 };
 
-const StepPhotos: Component<StepProps> = () => (
+const StepPhotos: Component = () => (
   <>
     <h2 class="mb-3 font-display text-[22px] tracking-tight">Tus fotos</h2>
     <p class="mb-4 text-[13px] text-muted">
-      Hasta 6 fotos. La primera será la portada de tu publicación.
+      Hasta 6 fotos. La primera será la portada de tu publicación. (Próximamente
+      con upload a Storage — por ahora se publica sin fotos reales.)
     </p>
     <div class="grid grid-cols-3 gap-2">
       <div class="relative aspect-square overflow-hidden rounded-md">
@@ -221,14 +286,17 @@ const StepDetails: Component<StepProps> = (props) => (
         type="text"
         value={props.form.title}
         onInput={(e) => props.setForm("title", e.currentTarget.value)}
-        class="w-full bg-transparent text-[15px] text-cream outline-none"
+        placeholder="Mesa lateral de nogal"
+        class="w-full bg-transparent text-[15px] text-cream outline-none placeholder:text-muted"
       />
     </FormField>
     <FormField label="Categoría">
-      <div class="flex items-center justify-between">
-        <span class="text-[15px]">{props.form.category}</span>
-        <ChevronIcon />
-      </div>
+      <input
+        type="text"
+        value={props.form.category}
+        onInput={(e) => props.setForm("category", e.currentTarget.value)}
+        class="w-full bg-transparent text-[15px] outline-none"
+      />
     </FormField>
     <div class="grid grid-cols-2 gap-2.5">
       <FormField label="Precio">
@@ -238,15 +306,21 @@ const StepDetails: Component<StepProps> = (props) => (
             type="text"
             inputmode="numeric"
             value={props.form.price}
+            placeholder="45"
             onInput={(e) =>
               props.setForm("price", e.currentTarget.value.replace(/[^\d]/g, ""))
             }
-            class="w-full bg-transparent text-[15px] outline-none"
+            class="w-full bg-transparent text-[15px] outline-none placeholder:text-muted"
           />
         </div>
       </FormField>
       <FormField label="Condición">
-        <p class="text-[15px]">{props.form.condition}</p>
+        <input
+          type="text"
+          value={props.form.condition}
+          onInput={(e) => props.setForm("condition", e.currentTarget.value)}
+          class="w-full bg-transparent text-[15px] outline-none"
+        />
       </FormField>
     </div>
     <FormField label="Descripción" minHeight={90}>
@@ -254,7 +328,8 @@ const StepDetails: Component<StepProps> = (props) => (
         value={props.form.description}
         onInput={(e) => props.setForm("description", e.currentTarget.value)}
         rows={3}
-        class="w-full resize-none bg-transparent text-sm leading-relaxed text-cream/85 outline-none"
+        placeholder="Detalles, medidas, defectos…"
+        class="w-full resize-none bg-transparent text-sm leading-relaxed text-cream/85 outline-none placeholder:text-muted"
       />
     </FormField>
 
@@ -272,13 +347,21 @@ const StepDetails: Component<StepProps> = (props) => (
   </>
 );
 
-const StepPickup: Component = () => (
-  <div class="flex h-full flex-col items-center justify-center gap-2 pb-12 text-center">
-    <h2 class="font-display text-[22px] tracking-tight">Recogida</h2>
-    <p class="max-w-[260px] text-[13px] text-muted">
-      Pendiente: selector de ubicación y disponibilidad horaria.
+const StepPickup: Component<StepProps> = (props) => (
+  <>
+    <h2 class="mb-3 font-display text-[22px] tracking-tight">Recogida</h2>
+    <p class="mb-4 text-[13px] text-muted">
+      ¿En qué barrio se recoge? (Selector de ubicación y horario llegan próximamente.)
     </p>
-  </div>
+    <FormField label="Barrio">
+      <input
+        type="text"
+        value={props.form.neighborhood}
+        onInput={(e) => props.setForm("neighborhood", e.currentTarget.value)}
+        class="w-full bg-transparent text-[15px] outline-none"
+      />
+    </FormField>
+  </>
 );
 
 const StepReview: Component<{ form: ListingForm }> = (props) => (
@@ -286,11 +369,17 @@ const StepReview: Component<{ form: ListingForm }> = (props) => (
     <h2 class="mb-4 font-display text-[22px] tracking-tight">Revisar</h2>
     <div class="rounded-md bg-card p-4">
       <p class="text-[11px] tracking-wider text-muted uppercase">Título</p>
-      <p class="mb-3 text-[15px]">{props.form.title}</p>
+      <p class="mb-3 text-[15px]">{props.form.title || "—"}</p>
       <p class="text-[11px] tracking-wider text-muted uppercase">Precio</p>
-      <p class="mb-3 text-[15px] text-lime">${props.form.price}</p>
-      <p class="text-[11px] tracking-wider text-muted uppercase">Descripción</p>
-      <p class="text-sm text-cream/85">{props.form.description}</p>
+      <p class="mb-3 text-[15px] text-lime">${props.form.price || "0"}</p>
+      <p class="text-[11px] tracking-wider text-muted uppercase">Categoría</p>
+      <p class="mb-3 text-[15px]">{props.form.category}</p>
+      <p class="text-[11px] tracking-wider text-muted uppercase">Barrio</p>
+      <p class="mb-3 text-[15px]">{props.form.neighborhood || "—"}</p>
+      <Show when={props.form.description}>
+        <p class="text-[11px] tracking-wider text-muted uppercase">Descripción</p>
+        <p class="text-sm text-cream/85">{props.form.description}</p>
+      </Show>
     </div>
   </>
 );
@@ -361,20 +450,6 @@ const PlusIcon = () => (
     stroke-linecap="round"
   >
     <path d="M12 5v14M5 12h14" />
-  </svg>
-);
-
-const ChevronIcon = () => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="var(--color-muted)"
-    stroke-width="2"
-    stroke-linecap="round"
-  >
-    <path d="M9 18l6-6-6-6" />
   </svg>
 );
 

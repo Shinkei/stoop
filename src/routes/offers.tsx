@@ -1,57 +1,48 @@
 import { Title } from "@solidjs/meta";
-import { type Component, createMemo, createSignal, For, Show } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createAsync, useNavigate } from "@solidjs/router";
+import {
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Show,
+  Suspense,
+} from "solid-js";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { TabBar } from "~/components/layout/TabBar";
+import { currentUser, isAuthenticated, isAuthLoading } from "~/lib/auth";
+import {
+  getInbox,
+  type OfferWithRels,
+  setOfferStatus,
+} from "~/lib/offers";
 
 /*
   Offers Inbox — /offers
 
-  Nuevos conceptos de SolidJS aquí:
+  Conceptos clave de SolidJS aquí:
 
-  1. createMemo(fn) para listas derivadas
-     - filtered() = createMemo(() => OFFERS.filter(o => o.status === tab()))
-     - Solo recalcula cuando tab() cambia. <For> recibe la lista filtrada
-       y solo crea/destruye los nodos que entran o salen — no re-renderiza
-       los que se mantienen.
-     - Sin memo, OFFERS.filter(...) correría en cada lectura. Para una
-       lista de 10 ítems da igual, pero el patrón importa.
+  1. createAsync con dependencia de señal
+     - getInbox(currentUser()?.id) re-corre si la sesión cambia.
 
-  2. createMemo vs función simple ()
-     - () => filter(...) también funciona, pero re-ejecuta en cada lectura.
-       Si la lista la leen varios nodos, el filter corre N veces.
-     - createMemo cachea el resultado hasta que una dependencia cambia.
+  2. createMemo para listas derivadas
+     - filtered() depende de tab() e inbox(). Solo recalcula cuando alguna
+       de las dos cambia. <For> recibe la lista filtrada.
 
-  3. Tab counts derivados
-     - count = createMemo(() => OFFERS.filter(o => o.status === id).length)
-     - Cuando cambia algo (marcar leída, etc.), los counts y la lista
-       se actualizan solos sin intervención manual.
+  3. Categorización en cliente
+     - El inbox trae TODAS las ofertas en las que el usuario está involucrado
+       (RLS lo garantiza). El campo `listing.seller_id` distingue si soy
+       seller (recibida) o buyer (enviada). El status === "accepted" va a
+       su propia pestaña independientemente del lado.
 
-  4. createStore para una lista mutable por ID
-     - createStore<Offer[]>(...) devuelve un proxy reactivo sobre el array.
-     - setOffers(o => o.id === id, "unread", false) busca el item que
-       cumple el predicado y le cambia una propiedad. Reactividad granular:
-       solo el nodo que lee `unread` de ese ítem se re-evalúa.
-     - Patrón clave: el primer argumento puede ser un índice, un predicado,
-       o el rango {from, to}. Devuelve los items que pasaron.
-
-  TODO: Conectar con Supabase
-  - supabase.from("offers").select("*, buyer:profiles(*), listing:listings(*)")
+  4. Mutación + revalidate
+     - setOfferStatus() en lib/offers.ts llama a revalidate(getInbox.key)
+       internamente, así que el inbox se re-fetch solo después de aceptar
+       o rechazar. La UI se actualiza sin manejo manual.
 */
 
 type TabId = "incoming" | "sent" | "accepted";
-
-type Offer = {
-  id: string;
-  name: string;
-  item: string;
-  amount: number;
-  ask: number;
-  time: string;
-  unread: boolean;
-  hue: number;
-  status: TabId;
-};
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "incoming", label: "Recibidas" },
@@ -59,43 +50,51 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "accepted", label: "Aceptadas" },
 ];
 
-const OFFERS: Offer[] = [
-  { id: "o1", name: "Jordan K.",  item: "Mesa lateral de nogal",   amount: 35, ask: 45, time: "12m", unread: true,  hue: 40,  status: "incoming" },
-  { id: "o2", name: "Priya S.",   item: "Mesa lateral de nogal",   amount: 40, ask: 45, time: "1h",  unread: true,  hue: 40,  status: "incoming" },
-  { id: "o3", name: "Dev A.",     item: "Set Pyrex vintage",       amount: 30, ask: 34, time: "3h",  unread: false, hue: 180, status: "incoming" },
-  { id: "o4", name: "Marco L.",   item: "Chaqueta denim Levi's",   amount: 22, ask: 28, time: "6h",  unread: false, hue: 220, status: "incoming" },
-  { id: "o5", name: "Simone V.",  item: "Colección de vinilos",    amount: 70, ask: 85, time: "1d",  unread: false, hue: 280, status: "incoming" },
-  { id: "o6", name: "Tú → Maya R.",   item: "Silla mid-century",  amount: 50, ask: 60, time: "2h", unread: false, hue: 30,  status: "sent" },
-  { id: "o7", name: "Tú → Carlos M.", item: "Lámpara de pie",     amount: 25, ask: 30, time: "4h", unread: false, hue: 100, status: "sent" },
-  { id: "o8", name: "Tú → Laura T.",  item: "Olla de hierro",     amount: 18, ask: 22, time: "1d", unread: false, hue: 200, status: "sent" },
-  { id: "o9", name: "Diego F.",   item: "Set de tazas",            amount: 15, ask: 18, time: "3d",  unread: false, hue: 320, status: "accepted" },
-  { id: "o10", name: "Sarah K.",  item: "Cojín bordado",           amount: 12, ask: 15, time: "5d",  unread: false, hue: 80,  status: "accepted" },
-];
-
 const Offers: Component = () => {
-  const [offers, setOffers] = createStore<Offer[]>(OFFERS);
+  const navigate = useNavigate();
   const [tab, setTab] = createSignal<TabId>("incoming");
+  const [pendingId, setPendingId] = createSignal<string | null>(null);
 
-  // Lista derivada — recalcula cuando tab() o offers cambia.
-  const filtered = createMemo(() => offers.filter((o) => o.status === tab()));
+  createEffect(() => {
+    if (!isAuthLoading() && !isAuthenticated()) {
+      navigate("/login", { replace: true });
+    }
+  });
 
-  // Counts por pestaña — derivados del store.
-  const countOf = (id: TabId) => offers.filter((o) => o.status === id).length;
+  const inbox = createAsync<OfferWithRels[]>(() => getInbox(currentUser()?.id), {
+    initialValue: [],
+  });
 
-  // Mejor oferta: la incoming con mayor % del precio pedido.
-  const bestOffer = createMemo(() =>
-    tab() === "incoming"
-      ? [...offers.filter((o) => o.status === "incoming")].sort(
-          (a, b) => b.amount / b.ask - a.amount / a.ask,
-        )[0]
-      : undefined,
-  );
+  const userId = () => currentUser()?.id;
 
-  // Marca una oferta como leída. setOffers acepta un predicado
-  // como primer argumento — busca el item que cumple y solo cambia
-  // la prop indicada.
-  const markRead = (id: string) => {
-    setOffers((o) => o.id === id, "unread", false);
+  // Predicate por pestaña. Centralizado para que count y filter coincidan.
+  const inTab = (o: OfferWithRels, t: TabId) => {
+    const uid = userId();
+    if (!uid) return false;
+    if (t === "accepted") return o.status === "accepted";
+    if (o.status !== "pending") return false;
+    if (t === "incoming") return o.listing.seller_id === uid;
+    return o.buyer_id === uid; // sent
+  };
+
+  const filtered = createMemo(() => inbox().filter((o) => inTab(o, tab())));
+  const countOf = (t: TabId) => inbox().filter((o) => inTab(o, t)).length;
+
+  // Mejor oferta pendiente: la incoming con mayor ratio amount/listing.price.
+  const bestOffer = createMemo(() => {
+    if (tab() !== "incoming") return undefined;
+    return [...inbox().filter((o) => inTab(o, "incoming"))].sort(
+      (a, b) => b.amount / Number(b.listing.price) - a.amount / Number(a.listing.price),
+    )[0];
+  });
+
+  const respond = async (offerId: string, status: "accepted" | "rejected") => {
+    setPendingId(offerId);
+    try {
+      await setOfferStatus(offerId, status);
+    } finally {
+      setPendingId(null);
+    }
   };
 
   return (
@@ -103,7 +102,6 @@ const Offers: Component = () => {
       <Title>Stoop — Ofertas</Title>
       <div class="flex h-full flex-col">
         <main class="flex-1 overflow-y-auto">
-          {/* Header — el contador refleja la pestaña actual */}
           <div class="px-5 pt-14 pb-5">
             <p class="mb-1 text-[11px] tracking-wider text-muted uppercase">Bandeja</p>
             <h1 class="font-display text-[34px] leading-none tracking-tight">
@@ -125,43 +123,38 @@ const Offers: Component = () => {
             </For>
           </div>
 
-          {/* Mejor oferta — solo en Recibidas */}
-          <Show when={bestOffer()}>
-            {(offer) => (
-              <section class="px-5 pt-4 pb-3">
-                <div class="rounded-lg bg-lime p-4 text-ink">
-                  <div class="mb-2 flex items-center justify-between">
-                    <p class="text-[11px] font-bold tracking-wider uppercase">Mejor oferta</p>
-                    <span class="rounded-pill bg-ink px-2 py-1 text-[10px] font-semibold text-lime">
-                      EXPIRA EN 2H
-                    </span>
-                  </div>
-                  <div class="mb-1 flex items-baseline gap-2">
-                    <p class="font-display text-[36px] leading-none tracking-tight">
-                      ${offer().amount}
-                    </p>
-                    <p class="text-xs">
-                      de <strong>{offer().name}</strong> · {offer().item}
-                    </p>
-                  </div>
-                  <p class="mb-3 text-[11px] opacity-70">
-                    {Math.round((offer().amount / offer().ask) * 100)}% del precio
-                  </p>
-                  <div class="flex gap-2">
-                    <button class="flex-1 rounded-pill bg-ink py-2.5 text-[13px] font-semibold text-lime">
-                      Aceptar
-                    </button>
-                    <button class="flex-1 rounded-pill border-[1.5px] border-ink py-2.5 text-[13px] font-semibold">
-                      Contraofertar
-                    </button>
-                  </div>
-                </div>
-              </section>
-            )}
-          </Show>
+          <Suspense fallback={<InboxSkeleton />}>
+            <Show when={bestOffer()}>
+              {(offer) => (
+                <BestOffer
+                  offer={offer()}
+                  busy={pendingId() === offer().id}
+                  onAccept={() => respond(offer().id, "accepted")}
+                  onReject={() => respond(offer().id, "rejected")}
+                />
+              )}
+            </Show>
 
-          {/* Lista filtrada por pestaña */}
-          <OfferList offers={filtered()} onRowClick={markRead} />
+            <Show when={filtered().length > 0} fallback={<EmptyInbox tab={tab()} />}>
+              <p class="px-5 pt-3 pb-1 text-[11px] tracking-wider text-muted uppercase">
+                Todas las ofertas
+              </p>
+              <div class="px-5 pb-4">
+                <For each={filtered()}>
+                  {(offer, i) => (
+                    <OfferRow
+                      offer={offer}
+                      isLast={i() === filtered().length - 1}
+                      side={tab()}
+                      busy={pendingId() === offer.id}
+                      onAccept={() => respond(offer.id, "accepted")}
+                      onReject={() => respond(offer.id, "rejected")}
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
+          </Suspense>
         </main>
 
         <TabBar active="offers" />
@@ -170,26 +163,145 @@ const Offers: Component = () => {
   );
 };
 
-const OfferList: Component<{
-  offers: Offer[];
-  onRowClick: (id: string) => void;
-}> = (props) => (
-  <>
-    <p class="px-5 pt-2 pb-1 text-[11px] tracking-wider text-muted uppercase">
-      Todas las ofertas
-    </p>
-    <div class="px-5 pb-4">
-      <For each={props.offers}>
-        {(offer, i) => (
-          <OfferRow
-            offer={offer}
-            isLast={i() === props.offers.length - 1}
-            onClick={() => props.onRowClick(offer.id)}
-          />
-        )}
-      </For>
+// ── Best offer card ──────────────────────────────────────────────
+
+const BestOffer: Component<{
+  offer: OfferWithRels;
+  busy: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+}> = (props) => {
+  const ratio = () =>
+    Math.round((props.offer.amount / Number(props.offer.listing.price)) * 100);
+  const expiresLabel = () => formatExpires(props.offer.expires_at);
+  return (
+    <section class="px-5 pt-4 pb-3">
+      <div class="rounded-lg bg-lime p-4 text-ink">
+        <div class="mb-2 flex items-center justify-between">
+          <p class="text-[11px] font-bold tracking-wider uppercase">Mejor oferta</p>
+          <Show when={expiresLabel()}>
+            {(label) => (
+              <span class="rounded-pill bg-ink px-2 py-1 text-[10px] font-semibold text-lime">
+                {label()}
+              </span>
+            )}
+          </Show>
+        </div>
+        <div class="mb-1 flex items-baseline gap-2">
+          <p class="font-display text-[36px] leading-none tracking-tight">
+            ${formatPrice(props.offer.amount)}
+          </p>
+          <p class="text-xs">
+            de <strong>{props.offer.buyer.full_name}</strong> · {props.offer.listing.title}
+          </p>
+        </div>
+        <p class="mb-3 text-[11px] opacity-70">{ratio()}% del precio</p>
+        <div class="flex gap-2">
+          <button
+            disabled={props.busy}
+            onClick={() => props.onAccept()}
+            class="flex-1 rounded-pill bg-ink py-2.5 text-[13px] font-semibold text-lime disabled:opacity-50"
+          >
+            {props.busy ? "…" : "Aceptar"}
+          </button>
+          <button
+            disabled={props.busy}
+            onClick={() => props.onReject()}
+            class="flex-1 rounded-pill border-[1.5px] border-ink py-2.5 text-[13px] font-semibold disabled:opacity-50"
+          >
+            Rechazar
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// ── Row ──────────────────────────────────────────────────────────
+
+const OfferRow: Component<{
+  offer: OfferWithRels;
+  isLast: boolean;
+  side: TabId;
+  busy: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+}> = (props) => {
+  const counterpart = () =>
+    props.side === "sent" ? props.offer.listing.seller : props.offer.buyer;
+  const displayName = () =>
+    props.side === "sent" ? `Tú → ${counterpart().full_name}` : counterpart().full_name;
+  const hue = () => hash(counterpart().id);
+  const ratio = () =>
+    Math.round((props.offer.amount / Number(props.offer.listing.price)) * 100);
+
+  return (
+    <div
+      class="flex items-start gap-3 py-3.5"
+      classList={{ "border-b border-hairline": !props.isLast }}
+    >
+      <div
+        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-ink"
+        style={{ background: `oklch(0.7 0.12 ${hue()})` }}
+      >
+        {counterpart().full_name[0]?.toUpperCase() ?? "?"}
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="mb-0.5 flex items-baseline justify-between gap-2">
+          <p class="truncate text-sm font-semibold text-cream">{displayName()}</p>
+          <p class="shrink-0 text-[11px] text-muted">{formatAge(props.offer.created_at)}</p>
+        </div>
+        <p class="truncate text-[12px] text-muted">
+          <Show when={props.side === "sent"} fallback={<>Ofreció </>}>
+            Ofreciste{" "}
+          </Show>
+          <span class="font-semibold text-lime">${formatPrice(props.offer.amount)}</span> ·{" "}
+          <span class="text-cream/70">{ratio()}%</span> · {props.offer.listing.title}
+        </p>
+        <Show when={props.side === "incoming"}>
+          <div class="mt-2 flex gap-2">
+            <button
+              disabled={props.busy}
+              onClick={() => props.onAccept()}
+              class="rounded-pill bg-lime px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-50"
+            >
+              {props.busy ? "…" : "Aceptar"}
+            </button>
+            <button
+              disabled={props.busy}
+              onClick={() => props.onReject()}
+              class="rounded-pill border border-hairline px-3 py-1.5 text-[12px] font-semibold text-cream disabled:opacity-50"
+            >
+              Rechazar
+            </button>
+          </div>
+        </Show>
+      </div>
     </div>
-  </>
+  );
+};
+
+// ── States ───────────────────────────────────────────────────────
+
+const InboxSkeleton: Component = () => (
+  <div class="animate-pulse px-5 py-4">
+    <div class="mb-3 h-24 rounded-lg bg-card" />
+    <div class="space-y-3">
+      <div class="h-16 rounded-md bg-card" />
+      <div class="h-16 rounded-md bg-card" />
+    </div>
+  </div>
+);
+
+const EmptyInbox: Component<{ tab: TabId }> = (props) => (
+  <div class="flex flex-col items-center px-8 py-16 text-center">
+    <p class="mb-2 text-sm text-cream">
+      {props.tab === "incoming" && "No tienes ofertas recibidas"}
+      {props.tab === "sent" && "No has enviado ofertas"}
+      {props.tab === "accepted" && "Aún no hay ofertas aceptadas"}
+    </p>
+    <p class="text-[12px] text-muted">Las ofertas aparecerán aquí cuando lleguen.</p>
+  </div>
 );
 
 const Tab: Component<{
@@ -199,7 +311,7 @@ const Tab: Component<{
   onClick?: () => void;
 }> = (props) => (
   <button
-    onClick={props.onClick}
+    onClick={() => props.onClick?.()}
     class="-mb-px border-b-2 pb-3"
     classList={{
       "border-lime": props.active,
@@ -219,43 +331,39 @@ const Tab: Component<{
   </button>
 );
 
-const OfferRow: Component<{
-  offer: Offer;
-  isLast: boolean;
-  onClick: () => void;
-}> = (props) => (
-  <button
-    onClick={props.onClick}
-    class="flex w-full items-center gap-3 py-3.5 text-left"
-    classList={{ "border-b border-hairline": !props.isLast }}
-  >
-    <div
-      class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-ink"
-      style={{ background: `oklch(0.7 0.12 ${props.offer.hue})` }}
-    >
-      {props.offer.name[0]}
-      {props.offer.unread && (
-        <div class="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-ink bg-lime" />
-      )}
-    </div>
-    <div class="min-w-0 flex-1">
-      <div class="mb-0.5 flex items-baseline justify-between gap-2">
-        <p
-          class="truncate text-sm"
-          classList={{
-            "font-semibold text-cream": props.offer.unread,
-            "font-medium text-cream/90": !props.offer.unread,
-          }}
-        >
-          {props.offer.name}
-        </p>
-        <p class="shrink-0 text-[11px] text-muted">{props.offer.time}</p>
-      </div>
-      <p class="truncate text-[12px] text-muted">
-        Ofreció <span class="font-semibold text-lime">${props.offer.amount}</span> por {props.offer.item}
-      </p>
-    </div>
-  </button>
-);
+// ── Helpers ──────────────────────────────────────────────────────
+
+const formatPrice = (price: number) => {
+  const n = typeof price === "string" ? parseFloat(price) : price;
+  return Number.isInteger(n) ? n.toString() : n.toFixed(2);
+};
+
+const formatAge = (created: string | null): string => {
+  if (!created) return "";
+  const diffMs = Date.now() - new Date(created).getTime();
+  const min = Math.round(diffMs / 60_000);
+  if (min < 1) return "ahora";
+  if (min < 60) return `${min}m`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.round(h / 24);
+  return `${d}d`;
+};
+
+const formatExpires = (expires: string | null): string | undefined => {
+  if (!expires) return undefined;
+  const ms = new Date(expires).getTime() - Date.now();
+  if (ms <= 0) return "EXPIRADA";
+  const h = Math.round(ms / 3_600_000);
+  if (h < 1) return "EXPIRA EN <1H";
+  if (h < 24) return `EXPIRA EN ${h}H`;
+  return `EXPIRA EN ${Math.round(h / 24)}D`;
+};
+
+const hash = (s: string): number => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * 11) % 360;
+  return h;
+};
 
 export default Offers;
