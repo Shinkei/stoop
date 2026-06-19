@@ -112,7 +112,7 @@ const ItemDetail: Component = () => {
                 {/* Hero / foto */}
                 <div class="relative shrink-0">
                   <div
-                    class="w-full transition-colors duration-300 bg-cover bg-center"
+                    class="w-full transition-colors duration-300 bg-cover bg-center md:h-[440px]"
                     style={{
                       height: "300px",
                       background: hasPhotos()
@@ -154,7 +154,7 @@ const ItemDetail: Component = () => {
 
                 {/* Contenido */}
                 <div class="flex-1 overflow-y-auto">
-                  <div class="px-5 pt-5 pb-6">
+                  <div class="mx-auto max-w-3xl px-5 pt-5 pb-6 md:px-6">
                     <div class="mb-1 flex items-baseline justify-between">
                       <span class="font-display text-3xl text-lime">
                         ${formatPrice(listing().price)}
@@ -223,7 +223,7 @@ const ItemDetail: Component = () => {
                 </div>
 
                 {/* CTAs sticky */}
-                <div class="flex shrink-0 gap-3 border-t border-hairline bg-ink px-5 py-4 pb-8">
+                <div class="mx-auto flex w-full max-w-3xl shrink-0 gap-3 border-t border-hairline bg-ink px-5 py-4 pb-8 md:px-6">
                   <Show when={listing().accepts_offers}>
                     <button
                       onClick={() => {

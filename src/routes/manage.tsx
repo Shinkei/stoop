@@ -108,8 +108,9 @@ const Manage: Component = () => {
       <Title>Stoop — Mis publicaciones</Title>
       <div class="flex h-full flex-col">
         <main class="flex-1 overflow-y-auto">
+          <div class="mx-auto w-full max-w-3xl">
           {/* Header */}
-          <div class="px-5 pt-14 pb-5">
+          <div class="px-5 pt-14 pb-5 md:px-6 md:pt-8">
             <p class="mb-1 text-[11px] tracking-wider text-muted uppercase">
               Panel del vendedor
             </p>
@@ -120,14 +121,14 @@ const Manage: Component = () => {
 
           <Suspense fallback={<ManageSkeleton />}>
             {/* Stats — derivadas con un único reduce */}
-            <div class="grid grid-cols-3 gap-2 px-5 pb-5">
+            <div class="grid grid-cols-3 gap-2 px-5 pb-5 md:px-6">
               <StatCard value={`${stats().active}`} label="Activas" />
               <StatCard value={`${stats().offers}`} label="Ofertas" accent />
               <StatCard value={`$${stats().earned}`} label="Ganado" />
             </div>
 
             {/* Filter pills */}
-            <div class="flex gap-2 overflow-x-auto px-5 pb-4">
+            <div class="flex gap-2 overflow-x-auto px-5 pb-4 md:px-6">
               <For each={FILTERS}>
                 {(f) => (
                   <FilterPill
@@ -141,7 +142,7 @@ const Manage: Component = () => {
             </div>
 
             <Show when={filtered().length > 0} fallback={<EmptyList />}>
-              <div class="px-5 pb-4">
+              <div class="px-5 pb-4 md:px-6">
                 <For each={filtered()}>
                   {(item, i) => (
                     <ItemRow item={item} isLast={i() === filtered().length - 1} />
@@ -150,6 +151,7 @@ const Manage: Component = () => {
               </div>
             </Show>
           </Suspense>
+          </div>
         </main>
 
         <TabBar active="profile" />
@@ -252,12 +254,12 @@ const StatusBadge: Component<{ status: ItemStatus }> = (props) => (
 
 const ManageSkeleton: Component = () => (
   <div class="animate-pulse">
-    <div class="grid grid-cols-3 gap-2 px-5 pb-5">
+    <div class="grid grid-cols-3 gap-2 px-5 pb-5 md:px-6">
       <div class="h-20 rounded-md bg-card" />
       <div class="h-20 rounded-md bg-card" />
       <div class="h-20 rounded-md bg-card" />
     </div>
-    <div class="space-y-3 px-5">
+    <div class="space-y-3 px-5 md:px-6">
       <div class="h-20 rounded-md bg-card" />
       <div class="h-20 rounded-md bg-card" />
     </div>

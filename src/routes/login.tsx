@@ -80,9 +80,9 @@ const Login: Component = () => {
   };
 
   return (
-    <MobileShell>
+    <MobileShell noNav>
       <Title>Stoop — {mode() === "signin" ? "Iniciar sesión" : "Crear cuenta"}</Title>
-      <div class="flex h-full flex-col px-5 pt-14 pb-8">
+      <div class="mx-auto flex h-full w-full max-w-md flex-col px-5 pt-14 pb-8 md:pt-16">
         {/* Header */}
         <div class="mb-8">
           <p class="mb-1 text-[11px] tracking-wider text-muted uppercase">

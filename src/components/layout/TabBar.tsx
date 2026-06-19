@@ -22,7 +22,7 @@ type Props = {
 
 export const TabBar: Component<Props> = (props) => {
   return (
-    <nav class="flex h-20 shrink-0 items-end justify-around bg-ink/95 pb-4 backdrop-blur-md">
+    <nav class="flex h-20 shrink-0 items-end justify-around bg-ink/95 pb-4 backdrop-blur-md md:hidden">
       <TabItem href="/" icon="home" label="Home" active={props.active === "home"} />
       <TabItem href="/search" icon="search" label="Buscar" active={props.active === "search"} />
 

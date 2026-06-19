@@ -74,6 +74,7 @@ const Profile: Component = () => {
           </Match>
           <Match when={isAuthenticated()}>
             <main class="flex-1 overflow-y-auto">
+              <div class="mx-auto w-full max-w-2xl">
               <Suspense fallback={<ProfileSkeleton />}>
                 <Show
                   when={profile()}
@@ -106,6 +107,7 @@ const Profile: Component = () => {
                   )}
                 </Show>
               </Suspense>
+              </div>
             </main>
           </Match>
         </Switch>
@@ -123,7 +125,7 @@ const ProfileView: Component<{
   onEdit: () => void;
 }> = (props) => (
   <>
-    <div class="px-5 pt-14 pb-6">
+    <div class="px-5 pt-14 pb-6 md:px-6 md:pt-8">
       <div class="mb-4 flex items-center gap-4">
         <div
           class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-bold text-ink"
@@ -154,7 +156,7 @@ const ProfileView: Component<{
       </div>
     </div>
 
-    <div class="grid grid-cols-3 gap-2 px-5 pb-6">
+    <div class="grid grid-cols-3 gap-2 px-5 pb-6 md:px-6">
       <StatCard value={`${props.profile.total_sold ?? 0}`} label="Vendidos" />
       <StatCard
         value={props.profile.rating?.toFixed(1) ?? "—"}
@@ -164,7 +166,7 @@ const ProfileView: Component<{
       <StatCard value={`${props.profile.reply_time_minutes ?? "—"}m`} label="Responde" />
     </div>
 
-    <div class="px-5 pb-4">
+    <div class="px-5 pb-4 md:px-6">
       <MenuItem href="/manage" label="Mis publicaciones" />
       <MenuItem href="/offers" label="Bandeja de ofertas" />
       <MenuItem href="#" label="Guardados" />
@@ -172,7 +174,7 @@ const ProfileView: Component<{
       <MenuItem href="#" label="Ajustes" isLast />
     </div>
 
-    <div class="px-5 pb-8">
+    <div class="px-5 pb-8 md:px-6">
       <button
         type="button"
         onClick={() => props.onSignOut()}
@@ -225,7 +227,7 @@ const ProfileForm: Component<{
   };
 
   return (
-    <form onSubmit={submit} class="flex flex-col px-5 pt-14 pb-8">
+    <form onSubmit={submit} class="flex flex-col px-5 pt-14 pb-8 md:px-6 md:pt-8">
       <h1 class="mb-1 font-display text-[26px] leading-none tracking-tight">{props.title}</h1>
       <Show when={props.intro}>
         {(t) => <p class="mb-5 text-[13px] text-muted">{t()}</p>}
@@ -347,7 +349,7 @@ const MenuItem: Component<{ href: string; label: string; isLast?: boolean }> = (
 );
 
 const ProfileSkeleton: Component = () => (
-  <main class="flex-1 px-5 pt-14">
+  <main class="flex-1 px-5 pt-14 md:px-6 md:pt-8">
     <div class="animate-pulse">
       <div class="mb-4 flex items-center gap-4">
         <div class="h-16 w-16 rounded-full bg-card" />

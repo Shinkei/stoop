@@ -49,7 +49,7 @@ const Home: Component = () => {
       <div class="flex h-full flex-col">
         <main class="flex-1 overflow-y-auto">
           {/* Header */}
-          <div class="flex items-center justify-between px-5 pt-14 pb-4">
+          <div class="flex items-center justify-between px-5 pt-14 pb-4 md:px-6 md:pt-8">
             <div>
               <p class="mb-1 text-[11px] tracking-wider text-muted uppercase">
                 <span class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-lime" />
@@ -65,15 +65,15 @@ const Home: Component = () => {
           </div>
 
           {/* Search pill */}
-          <A href="/search" class="block px-5 pb-5">
-            <div class="flex h-12 items-center gap-3 rounded-lg bg-card px-4">
+          <A href="/search" class="block px-5 pb-5 md:px-6">
+            <div class="flex h-12 items-center gap-3 rounded-lg bg-card px-4 md:max-w-xl">
               <SearchIcon />
               <span class="text-sm text-muted">Busca en tu barrio…</span>
             </div>
           </A>
 
           {/* Category chips */}
-          <div class="flex gap-2 overflow-x-auto px-5 pb-6">
+          <div class="flex gap-2 overflow-x-auto px-5 pb-6 md:px-6">
             <For each={CATEGORIES}>
               {(cat) => (
                 <button
@@ -93,19 +93,19 @@ const Home: Component = () => {
           <Suspense fallback={<FeedSkeleton />}>
             <Show when={listings().length > 0} fallback={<EmptyFeed />}>
               {/* Recién publicados */}
-              <div class="flex items-baseline justify-between px-5 pb-3">
+              <div class="flex items-baseline justify-between px-5 pb-3 md:px-6">
                 <h2 class="font-display text-[22px] tracking-tight">Recién publicados</h2>
                 <span class="text-xs text-muted">Ver todos →</span>
               </div>
-              <div class="flex gap-3 overflow-x-auto px-5 pb-7">
+              <div class="flex gap-3 overflow-x-auto px-5 pb-7 md:px-6">
                 <For each={featured()}>{(item) => <FeaturedCard item={item} />}</For>
               </div>
 
-              {/* De tus vecinos — grid 2 columnas */}
-              <div class="px-5 pb-3">
+              {/* De tus vecinos — grid responsive (2/3/4 columnas) */}
+              <div class="px-5 pb-3 md:px-6">
                 <h2 class="font-display text-[22px] tracking-tight">De tus vecinos</h2>
               </div>
-              <div class="grid grid-cols-2 gap-3 px-5 pb-8">
+              <div class="grid grid-cols-2 gap-3 px-5 pb-8 md:grid-cols-3 md:px-6 lg:grid-cols-4">
                 <For each={listings()}>{(item) => <FeedCard item={item} />}</For>
               </div>
             </Show>
@@ -161,8 +161,8 @@ const Thumb: Component<{ id: string; photo: string | undefined; height: number }
 // ── States ───────────────────────────────────────────────────────
 
 const FeedSkeleton: Component = () => (
-  <div class="grid grid-cols-2 gap-3 px-5 pb-8">
-    <For each={[1, 2, 3, 4]}>
+  <div class="grid grid-cols-2 gap-3 px-5 pb-8 md:grid-cols-3 md:px-6 lg:grid-cols-4">
+    <For each={[1, 2, 3, 4, 5, 6, 7, 8]}>
       {() => (
         <div class="animate-pulse">
           <div class="mb-2 h-40 rounded-xl bg-card" />

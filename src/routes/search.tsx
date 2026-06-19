@@ -123,9 +123,9 @@ const Search: Component = () => {
       <div class="flex h-full flex-col">
         <main class="flex-1 overflow-y-auto pb-4">
           {/* Header + input */}
-          <div class="px-5 pt-14 pb-5">
+          <div class="px-5 pt-14 pb-5 md:px-6 md:pt-8">
             <h1 class="mb-4 font-display text-[34px] leading-none tracking-tight">Buscar</h1>
-            <div class="flex h-12 items-center gap-3 rounded-lg bg-card px-4">
+            <div class="flex h-12 items-center gap-3 rounded-lg bg-card px-4 md:max-w-2xl">
               <SearchIcon active={query().length > 0} />
               <input
                 type="text"
@@ -154,7 +154,7 @@ const Search: Component = () => {
             fallback={
               <>
                 <Show when={recents().length > 0}>
-                  <section class="px-5 pb-6">
+                  <section class="px-5 pb-6 md:px-6">
                     <div class="mb-3 flex items-baseline justify-between">
                       <p class="text-[11px] font-semibold tracking-wider text-muted uppercase">
                         Recientes
@@ -180,11 +180,11 @@ const Search: Component = () => {
                 </Show>
 
                 {/* Categorías */}
-                <section class="px-5 pb-4">
+                <section class="px-5 pb-4 md:px-6">
                   <p class="mb-3 text-[11px] font-semibold tracking-wider text-muted uppercase">
                     Explora por categoría
                   </p>
-                  <div class="grid grid-cols-2 gap-2.5">
+                  <div class="grid grid-cols-2 gap-2.5 md:grid-cols-4 lg:grid-cols-6">
                     <For each={CATEGORIES}>
                       {(cat) => (
                         <button
@@ -208,10 +208,10 @@ const Search: Component = () => {
           >
             <Suspense fallback={<ResultsSkeleton />}>
               <Show when={results().length > 0} fallback={<EmptyResults query={trimmed()} />}>
-                <p class="px-5 pt-2 pb-3 text-[11px] font-semibold tracking-wider text-muted uppercase">
+                <p class="px-5 pt-2 pb-3 text-[11px] font-semibold tracking-wider text-muted uppercase md:px-6">
                   {results().length} resultado{results().length === 1 ? "" : "s"}
                 </p>
-                <div class="grid grid-cols-2 gap-3 px-5 pb-8">
+                <div class="grid grid-cols-2 gap-3 px-5 pb-8 md:grid-cols-3 md:px-6 lg:grid-cols-4">
                   <For each={results()}>{(item) => <ResultCard item={item} />}</For>
                 </div>
               </Show>
@@ -244,8 +244,8 @@ const ResultCard: Component<{ item: ListingRow }> = (props) => (
 );
 
 const ResultsSkeleton: Component = () => (
-  <div class="grid grid-cols-2 gap-3 px-5 pt-2 pb-8">
-    <For each={[1, 2, 3, 4]}>
+  <div class="grid grid-cols-2 gap-3 px-5 pt-2 pb-8 md:grid-cols-3 md:px-6 lg:grid-cols-4">
+    <For each={[1, 2, 3, 4, 5, 6, 7, 8]}>
       {() => (
         <div class="animate-pulse">
           <div class="mb-2 h-36 rounded-xl bg-card" />

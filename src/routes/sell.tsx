@@ -13,7 +13,14 @@ import {
 import { createStore } from "solid-js/store";
 import { MobileShell } from "~/components/layout/MobileShell";
 import { currentUser, isAuthenticated, isAuthLoading } from "~/lib/auth";
-import { createListing, type NewListing } from "~/lib/listings";
+import {
+  createListing,
+  deleteListingPhoto,
+  type NewListing,
+  uploadListingPhoto,
+} from "~/lib/listings";
+
+const MAX_PHOTOS = 6;
 
 /*
   Sell — /sell
@@ -87,6 +94,7 @@ const Sell: Component = () => {
   const [form, setForm] = createStore<ListingForm>({ ...INITIAL_FORM });
   const [step, setStep] = createSignal<StepId>(1);
   const [submitting, setSubmitting] = createSignal(false);
+  const [uploading, setUploading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
   createEffect(() => {
@@ -99,16 +107,55 @@ const Sell: Component = () => {
   const isLastStep = () => step() === STEPS.length;
 
   // Validación por paso — solo bloquea cuando faltan datos del paso actual.
-  // En el paso 1 permitimos seguir aunque no haya fotos: el modelo todavía
-  // no acepta uploads reales y el step muestra placeholders.
   const canContinue = () => {
-    if (submitting()) return false;
+    if (submitting() || uploading()) return false;
     switch (step()) {
+      case 1:
+        return form.photos.length > 0;
       case 2:
         return form.title.trim().length > 0 && form.price.trim().length > 0;
       default:
         return true;
     }
+  };
+
+  // Sube archivos al bucket en serie. Mantenemos serie en vez de paralelo
+  // para que la barra de progreso (uploading()) sea estable y para no
+  // saturar el cliente con N requests concurrentes.
+  const uploadPhotos = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const user = currentUser();
+    if (!user) {
+      navigate("/login", { replace: true });
+      return;
+    }
+    const slots = MAX_PHOTOS - form.photos.length;
+    if (slots <= 0) return;
+    setError(null);
+    setUploading(true);
+    try {
+      for (const file of Array.from(files).slice(0, slots)) {
+        const url = await uploadListingPhoto(file, user.id);
+        setForm("photos", form.photos.length, url);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error subiendo foto");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Borra el objeto en Storage y luego retira la URL del array. Si el
+  // borrado falla en el server, al menos la UI queda consistente con
+  // lo que el usuario ve (la foto desaparece).
+  const removePhoto = (index: number) => {
+    const url = form.photos[index];
+    if (!url) return;
+    setForm(
+      "photos",
+      form.photos.filter((_, i) => i !== index),
+    );
+    void deleteListingPhoto(url);
   };
 
   const submit = async () => {
@@ -153,11 +200,11 @@ const Sell: Component = () => {
   };
 
   return (
-    <MobileShell>
+    <MobileShell noNav>
       <Title>Stoop — Nueva publicación</Title>
-      <div class="flex h-full flex-col">
+      <div class="mx-auto flex h-full w-full max-w-xl flex-col">
         {/* Top bar — back en pasos > 1, close en paso 1 */}
-        <div class="flex shrink-0 items-center justify-between px-5 pt-14 pb-5">
+        <div class="flex shrink-0 items-center justify-between px-5 pt-14 pb-5 md:pt-8">
           <Switch>
             <Match when={step() === 1}>
               <A
@@ -206,7 +253,12 @@ const Sell: Component = () => {
         <main class="flex-1 overflow-y-auto px-5">
           <Switch>
             <Match when={step() === 1}>
-              <StepPhotos />
+              <StepPhotos
+                photos={form.photos}
+                uploading={uploading()}
+                onPick={uploadPhotos}
+                onRemove={removePhoto}
+              />
             </Match>
             <Match when={step() === 2}>
               <StepDetails form={form} setForm={setForm} />
@@ -253,31 +305,75 @@ type StepProps = {
   setForm: ReturnType<typeof createStore<ListingForm>>[1];
 };
 
-const StepPhotos: Component = () => (
-  <>
-    <h2 class="mb-3 font-display text-[22px] tracking-tight">Tus fotos</h2>
-    <p class="mb-4 text-[13px] text-muted">
-      Hasta 6 fotos. La primera será la portada de tu publicación. (Próximamente
-      con upload a Storage — por ahora se publica sin fotos reales.)
-    </p>
-    <div class="grid grid-cols-3 gap-2">
-      <div class="relative aspect-square overflow-hidden rounded-md">
-        <div class="absolute inset-0" style={{ background: "oklch(0.45 0.08 40)" }} />
-        <span class="absolute bottom-1 left-1 rounded-xs bg-lime px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-ink uppercase">
-          Portada
-        </span>
+type StepPhotosProps = {
+  photos: string[];
+  uploading: boolean;
+  onPick: (files: FileList | null) => void;
+  onRemove: (index: number) => void;
+};
+
+const StepPhotos: Component<StepPhotosProps> = (props) => {
+  let inputRef: HTMLInputElement | undefined;
+  const canAddMore = () => props.photos.length < MAX_PHOTOS;
+  return (
+    <>
+      <h2 class="mb-3 font-display text-[22px] tracking-tight">Tus fotos</h2>
+      <p class="mb-4 text-[13px] text-muted">
+        Hasta {MAX_PHOTOS} fotos. La primera será la portada de tu publicación.
+      </p>
+      <div class="grid grid-cols-3 gap-2">
+        <For each={props.photos}>
+          {(url, i) => (
+            <div class="relative aspect-square overflow-hidden rounded-md bg-card">
+              <img
+                src={url}
+                alt={`Foto ${i() + 1}`}
+                class="absolute inset-0 h-full w-full object-cover"
+              />
+              <Show when={i() === 0}>
+                <span class="absolute bottom-1 left-1 rounded-xs bg-lime px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-ink uppercase">
+                  Portada
+                </span>
+              </Show>
+              <button
+                type="button"
+                onClick={() => props.onRemove(i())}
+                aria-label="Quitar foto"
+                class="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-cream backdrop-blur-sm"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          )}
+        </For>
+        <Show when={canAddMore()}>
+          <button
+            type="button"
+            onClick={() => inputRef?.click()}
+            disabled={props.uploading}
+            class="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border-[1.5px] border-dashed border-faint text-muted transition-colors disabled:opacity-50"
+          >
+            <Show when={!props.uploading} fallback={<span class="text-[10px]">Subiendo…</span>}>
+              <PlusIcon />
+              <span class="text-[10px]">Agregar</span>
+            </Show>
+          </button>
+        </Show>
       </div>
-      <div
-        class="aspect-square overflow-hidden rounded-md"
-        style={{ background: "oklch(0.42 0.07 40)" }}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        class="hidden"
+        onChange={(e) => {
+          props.onPick(e.currentTarget.files);
+          e.currentTarget.value = "";
+        }}
       />
-      <button class="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border-[1.5px] border-dashed border-faint text-muted">
-        <PlusIcon />
-        <span class="text-[10px]">Agregar</span>
-      </button>
-    </div>
-  </>
-);
+    </>
+  );
+};
 
 const StepDetails: Component<StepProps> = (props) => (
   <>

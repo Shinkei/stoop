@@ -146,6 +146,45 @@ export async function setListingStatus(
   await revalidate(getMyListings.key);
 }
 
+const PHOTO_BUCKET = "listing-photos";
+const ALLOWED_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"]);
+
+/** Sube una foto al bucket `listing-photos` y devuelve su URL pública.
+ *
+ *  Convención de path: `{user_id}/{uuid}.{ext}`.
+ *  - El primer segmento (carpeta = user id) lo usa la policy de Storage
+ *    para garantizar que cada usuario solo escribe en su carpeta:
+ *      (storage.foldername(name))[1] = auth.uid()::text
+ *  - El bucket se crea como público, así que getPublicUrl(path) devuelve
+ *    una URL accesible sin firmar.
+ */
+export async function uploadListingPhoto(file: File, userId: string): Promise<string> {
+  const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
+  const safeExt = ALLOWED_EXT.has(ext) ? ext : "jpg";
+  const path = `${userId}/${crypto.randomUUID()}.${safeExt}`;
+
+  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file, {
+    contentType: file.type || `image/${safeExt}`,
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+/** Elimina una foto del bucket. Recibe la URL pública y deriva el path
+ *  interno haciendo split por el segmento del bucket. */
+export async function deleteListingPhoto(publicUrl: string): Promise<void> {
+  const marker = `/${PHOTO_BUCKET}/`;
+  const idx = publicUrl.indexOf(marker);
+  if (idx < 0) return;
+  const path = publicUrl.slice(idx + marker.length);
+  // Ignoramos errores: si el objeto ya no existe, no merece la pena bloquear UX.
+  await supabase.storage.from(PHOTO_BUCKET).remove([path]);
+}
+
 /** Hue determinístico desde el id para placeholders de imagen.
  *  Mientras no haya fotos reales, esto da una variedad visual estable
  *  (el mismo id siempre produce el mismo color). */

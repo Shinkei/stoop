@@ -102,7 +102,8 @@ const Offers: Component = () => {
       <Title>Stoop — Ofertas</Title>
       <div class="flex h-full flex-col">
         <main class="flex-1 overflow-y-auto">
-          <div class="px-5 pt-14 pb-5">
+          <div class="mx-auto w-full max-w-3xl">
+          <div class="px-5 pt-14 pb-5 md:px-6 md:pt-8">
             <p class="mb-1 text-[11px] tracking-wider text-muted uppercase">Bandeja</p>
             <h1 class="font-display text-[34px] leading-none tracking-tight">
               Ofertas <span class="text-lime">· {filtered().length}</span>
@@ -110,7 +111,7 @@ const Offers: Component = () => {
           </div>
 
           {/* Tabs */}
-          <div class="flex gap-5 border-b border-hairline px-5">
+          <div class="flex gap-5 border-b border-hairline px-5 md:px-6">
             <For each={TABS}>
               {(t) => (
                 <Tab
@@ -136,10 +137,10 @@ const Offers: Component = () => {
             </Show>
 
             <Show when={filtered().length > 0} fallback={<EmptyInbox tab={tab()} />}>
-              <p class="px-5 pt-3 pb-1 text-[11px] tracking-wider text-muted uppercase">
+              <p class="px-5 pt-3 pb-1 text-[11px] tracking-wider text-muted uppercase md:px-6">
                 Todas las ofertas
               </p>
-              <div class="px-5 pb-4">
+              <div class="px-5 pb-4 md:px-6">
                 <For each={filtered()}>
                   {(offer, i) => (
                     <OfferRow
@@ -155,6 +156,7 @@ const Offers: Component = () => {
               </div>
             </Show>
           </Suspense>
+          </div>
         </main>
 
         <TabBar active="offers" />
@@ -175,7 +177,7 @@ const BestOffer: Component<{
     Math.round((props.offer.amount / Number(props.offer.listing.price)) * 100);
   const expiresLabel = () => formatExpires(props.offer.expires_at);
   return (
-    <section class="px-5 pt-4 pb-3">
+    <section class="px-5 pt-4 pb-3 md:px-6">
       <div class="rounded-lg bg-lime p-4 text-ink">
         <div class="mb-2 flex items-center justify-between">
           <p class="text-[11px] font-bold tracking-wider uppercase">Mejor oferta</p>
